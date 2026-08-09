@@ -1,0 +1,5 @@
+﻿# Lembretes do Organizador Pessoal
+# Campos separados por ':' e cada lembrete separado por uma linha em branco.
+# Recorrência: única, diária, semanal ou mensal.
+# Dias (para semanal): Seg, Ter, Qua, Qui, Sex, Sáb, Dom.
+# Ativo: sim ou não.

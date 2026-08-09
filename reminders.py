@@ -44,6 +44,7 @@ class Reminder:
     day_of_month: int = 1
     enabled: bool = True
     next_trigger: str = ""
+    snooze_until: str = ""
 
 
 def compute_next_trigger(reminder, now=None):
@@ -114,6 +115,28 @@ def format_next(next_trigger, now=None):
     return f"{dt:%d/%m/%Y} às {dt:%H:%M}"
 
 
+def is_snoozed(reminder, now=None):
+    if not reminder.snooze_until:
+        return False
+    now = now or datetime.now()
+    try:
+        return datetime.fromisoformat(reminder.snooze_until) > now
+    except ValueError:
+        return False
+
+
+def is_overdue(reminder, now=None):
+    now = now or datetime.now()
+    if not reminder.enabled or not reminder.next_trigger:
+        return False
+    if is_snoozed(reminder, now):
+        return False
+    try:
+        return datetime.fromisoformat(reminder.next_trigger) <= now
+    except ValueError:
+        return False
+
+
 def _type_to_pt(trigger_type):
     return TYPE_TO_PT.get(trigger_type, trigger_type)
 
@@ -160,6 +183,7 @@ def serialize_reminder(reminder):
         f"Dias: {weekdays}\n"
         f"Dia do mês: {reminder.day_of_month}\n"
         f"Ativo: {'sim' if reminder.enabled else 'não'}"
+        f"{'' if not reminder.snooze_until else '\nSoneca: ' + reminder.snooze_until}"
     )
 
 
@@ -197,6 +221,7 @@ def parse_reminder(block_lines):
         weekdays=weekdays,
         day_of_month=day_of_month,
         enabled=enabled,
+        snooze_until=data.get("soneca", "").strip(),
     )
 
 
@@ -293,11 +318,25 @@ class ReminderManager:
             if reminder.id == reminder_id:
                 reminder.enabled = not reminder.enabled
                 reminder.next_trigger = ""
+                reminder.snooze_until = ""
                 if reminder.enabled:
                     next_trigger = compute_next_trigger(reminder)
                     reminder.next_trigger = next_trigger.isoformat() if next_trigger else ""
                 self.save()
                 return
+
+    def snooze(self, reminder_id, minutes):
+        """Adia um lembrete em minutos, re-armando o alerta para a nova hora."""
+        now = datetime.now()
+        until = now + timedelta(minutes=minutes)
+        for reminder in self.reminders:
+            if reminder.id == reminder_id:
+                reminder.snooze_until = until.isoformat()
+                reminder.next_trigger = until.isoformat()
+                reminder.enabled = True
+                self.save()
+                return True
+        return False
 
     def check_due(self, now=None):
         now = now or datetime.now()
@@ -306,9 +345,12 @@ class ReminderManager:
         for reminder in self.reminders:
             if not reminder.enabled or not reminder.next_trigger:
                 continue
+            if is_snoozed(reminder, now):
+                continue
             if datetime.fromisoformat(reminder.next_trigger) <= now:
                 fired.append(reminder)
                 changed = True
+                reminder.snooze_until = ""
                 if reminder.trigger_type == "one_time":
                     reminder.enabled = False
                     reminder.next_trigger = ""

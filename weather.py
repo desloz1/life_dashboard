@@ -50,23 +50,30 @@ def get_weather():
         "latitude": LATITUDE,
         "longitude": LONGITUDE,
         "current": (
-            "temperature_2m,relative_humidity_2m,"
-            "apparent_temperature,weather_code,wind_speed_10m"
+            "temperature_2m,relative_humidity_2m,apparent_temperature,"
+            "weather_code,wind_speed_10m,pressure_msl,precipitation"
         ),
-        "daily": "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max",
+        "hourly": "temperature_2m,weather_code,precipitation_probability",
+        "daily": (
+            "weather_code,temperature_2m_max,temperature_2m_min,"
+            "precipitation_probability_max,sunrise,sunset,pressure_msl_mean"
+        ),
         "timezone": "America/Sao_Paulo",
         "forecast_days": 7,
+        "forecast_hours": 24,
     }
     response = requests.get(API_URL, params=params, headers=HEADERS, timeout=15)
     response.raise_for_status()
     data = response.json()
 
     current = data["current"]
+    hourly = data["hourly"]
+    daily = data["daily"]
+
     current_code = current["weather_code"]
     description, icon_name, icon_color = _info(current_code)
 
     days = []
-    daily = data["daily"]
     for index, day in enumerate(daily["time"]):
         code = daily["weather_code"][index]
         desc, icon, color = _info(code)
@@ -80,16 +87,43 @@ def get_weather():
                 "max": round(daily["temperature_2m_max"][index]),
                 "min": round(daily["temperature_2m_min"][index]),
                 "precip": daily["precipitation_probability_max"][index],
+                "sunrise": daily["sunrise"][index].split("T")[1][:5],
+                "sunset": daily["sunset"][index].split("T")[1][:5],
+                "pressure": round(daily["pressure_msl_mean"][index]),
             }
         )
 
+    hours = []
+    for index, stamp in enumerate(hourly["time"]):
+        code = hourly["weather_code"][index]
+        desc, icon, color = _info(code)
+        hours.append(
+            {
+                "time": stamp,
+                "code": code,
+                "description": desc,
+                "icon": icon,
+                "color": color,
+                "temp": round(hourly["temperature_2m"][index]),
+                "precip": hourly["precipitation_probability"][index],
+            }
+        )
+
+    today = days[0]
     return {
         "temperature": round(current["temperature_2m"]),
         "feels_like": round(current["apparent_temperature"]),
         "humidity": current["relative_humidity_2m"],
         "wind": round(current["wind_speed_10m"]),
+        "pressure": round(current["pressure_msl"]),
+        "precip": round(current["precipitation"], 1),
         "description": description,
         "icon": icon_name,
         "color": icon_color,
+        "max": today["max"],
+        "min": today["min"],
+        "sunrise": today["sunrise"],
+        "sunset": today["sunset"],
         "days": days,
+        "hours": hours,
     }
