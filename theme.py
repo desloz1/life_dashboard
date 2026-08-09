@@ -103,7 +103,7 @@ HIGH_CONTRAST = False
 THUMB_WIDTH = 130
 THUMB_HEIGHT = 90
 
-SHADOW_OBJECT_NAMES = ("sidebar", "newsCard", "featuredCard", "reminderCard", "weatherCard", "dayCard", "dashCard", "taskCard")
+SHADOW_OBJECT_NAMES = ("sidebar", "newsCard", "featuredCard", "reminderCard", "weatherCard", "dayCard", "dashCard", "taskCard", "noteCard")
 
 
 def apply_theme(app, name):
@@ -493,6 +493,59 @@ def apply_stylesheet(app):
         }}
         #filterBtn:hover {{ background: {BTN_HOVER}; color: {TEXT}; }}
         #filterBtn:checked {{ background: {ACCENT_SOFT}; color: {ACCENT}; }}
+
+        #noteCard {{
+            background: {CARD};
+            border: 1px solid {BORDER};
+            border-radius: 10px;
+        }}
+        #noteCard:hover {{
+            border: 1px solid {BORDER_HOVER};
+            background: {CARD_HOVER};
+        }}
+        #noteCard[active="true"] {{
+            border: 1px solid {ACCENT};
+            background: {ACCENT_SOFT};
+        }}
+        #noteTitle {{
+            font-size: 14px;
+            font-weight: 600;
+            color: {TEXT};
+        }}
+        #noteSnippet {{
+            font-size: 12px;
+            color: {MUTED};
+        }}
+        #noteMeta {{
+            font-size: 12px;
+            color: {MUTED};
+        }}
+        #noteTitleEdit {{
+            font-size: 18px;
+            font-weight: 700;
+            color: {TEXT};
+        }}
+        #notePreview, #noteEditor {{
+            background: {CARD};
+            border: 1px solid {BORDER};
+            border-radius: 12px;
+            padding: 6px;
+        }}
+        #attachChip {{
+            background: {BTN};
+            border: 1px solid {BORDER};
+            border-radius: 8px;
+        }}
+        #attachChip:hover {{ border: 1px solid {BORDER_HOVER}; }}
+        #attachThumb {{
+            background: {THUMB_BG};
+            border-radius: 6px;
+        }}
+        #attachName {{
+            font-size: 12px;
+            color: {TEXT};
+            max-width: 180px;
+        }}
 
         #agendaRow {{
             background: {CARD};

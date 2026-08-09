@@ -173,6 +173,9 @@ def _date_to_iso(text):
 
 def serialize_reminder(reminder):
     weekdays = ", ".join(_weekday_name(w) for w in sorted(reminder.weekdays))
+    snooze = ""
+    if reminder.snooze_until:
+        snooze = "\nSoneca: " + reminder.snooze_until
     return (
         f"ID: {reminder.id}\n"
         f"Título: {reminder.title}\n"
@@ -183,7 +186,7 @@ def serialize_reminder(reminder):
         f"Dias: {weekdays}\n"
         f"Dia do mês: {reminder.day_of_month}\n"
         f"Ativo: {'sim' if reminder.enabled else 'não'}"
-        f"{'' if not reminder.snooze_until else '\nSoneca: ' + reminder.snooze_until}"
+        f"{snooze}"
     )
 
 

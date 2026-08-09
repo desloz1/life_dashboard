@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 import notify
+import notes as notes_mod
 import preferences
 import reminders as rem
 import tasks as tasks_mod
@@ -27,6 +28,7 @@ import theme
 from agenda_ui import AgendaView
 from dashboard_ui import DashboardView
 from news import NewsView
+from notes_ui import NotesView
 from reminders_ui import RemindersView
 from tasks_ui import TasksView
 from weather_ui import WeatherView
@@ -116,7 +118,7 @@ class MainWindow(QMainWindow):
             ("Clima", "fa5s.cloud-sun", True),
             ("Tarefas", "fa5s.tasks", True),
             ("Agenda", "fa5s.calendar-alt", True),
-            ("Notas", "fa5s.sticky-note", False),
+            ("Notas", "fa5s.sticky-note", True),
         )
 
         self.theme_btn = QToolButton()
@@ -160,23 +162,27 @@ class MainWindow(QMainWindow):
 
         self.reminder_manager = rem.ReminderManager()
         self.tasks_manager = tasks_mod.TaskManager()
+        self.notes_manager = notes_mod.NoteManager()
         self.dashboard_view = DashboardView(self.reminder_manager, self.tasks_manager)
         self.news_view = NewsView()
         self.reminders_view = RemindersView(self.reminder_manager)
         self.tasks_view = TasksView(self.tasks_manager)
         self.agenda_view = AgendaView(self.tasks_manager)
         self.weather_view = WeatherView()
+        self.notes_view = NotesView(self.notes_manager)
         self.stack_layout.addWidget(self.dashboard_view)
         self.stack_layout.addWidget(self.news_view)
         self.stack_layout.addWidget(self.reminders_view)
         self.stack_layout.addWidget(self.weather_view)
         self.stack_layout.addWidget(self.tasks_view)
         self.stack_layout.addWidget(self.agenda_view)
+        self.stack_layout.addWidget(self.notes_view)
         self.dashboard_view.hide()
         self.reminders_view.hide()
         self.weather_view.hide()
         self.tasks_view.hide()
         self.agenda_view.hide()
+        self.notes_view.hide()
 
         self._fade_effect = None
         self._fade_anim = None
@@ -225,9 +231,10 @@ class MainWindow(QMainWindow):
         self.reminders_view.refresh()
         self.tasks_view.refresh()
         self.agenda_view.refresh()
+        self.notes_view.refresh()
 
     def _setup_shortcuts(self):
-        for index in range(1, 7):
+        for index in range(1, 8):
             QShortcut(QKeySequence(f"Ctrl+{index}"), self,
                       activated=lambda i=index: self.sidebar.setCurrentRow(i - 1))
         QShortcut(QKeySequence("F5"), self, activated=self._refresh_current)
@@ -248,6 +255,8 @@ class MainWindow(QMainWindow):
             self.weather_view.load_weather()
         elif row == 5:
             self.agenda_view.refresh()
+        elif row == 6:
+            self.notes_view.refresh()
 
     def _focus_search(self):
         row = self.sidebar.currentRow()
@@ -256,6 +265,7 @@ class MainWindow(QMainWindow):
             2: self.reminders_view.search_edit,
             4: self.tasks_view.search_edit,
             5: self.agenda_view.search_edit,
+            6: self.notes_view.search_edit,
         }.get(row)
         if target is not None:
             target.setFocus()
@@ -400,6 +410,7 @@ class MainWindow(QMainWindow):
         self.weather_view.setVisible(row == 3)
         self.tasks_view.setVisible(row == 4)
         self.agenda_view.setVisible(row == 5)
+        self.notes_view.setVisible(row == 6)
         self._start_fade()
 
     def _start_fade(self):
