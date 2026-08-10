@@ -424,8 +424,13 @@ def apply_stylesheet(app):
             background: {PAUSED_BG};
             border: 1px solid {PAUSED_BORDER};
         }}
+        #taskCard[overdue="true"] {{
+            background: {DANGER_SOFT};
+            border: 1px solid {DANGER};
+        }}
         #taskCard[completed="true"] #taskTitle {{
             color: {MUTED};
+            text-decoration: line-through;
         }}
         #taskCard[completed="true"] #taskMeta {{
             color: {MUTED};
@@ -818,24 +823,14 @@ def apply_stylesheet(app):
             border-radius: 12px;
         }}
         #reminderIcon {{
-            font-size: 24px;
-            min-width: 40px;
+            min-width: 22px;
         }}
         #reminderTitle {{
-            font-size: 15px;
+            font-size: 14px;
             font-weight: 700;
             color: {TEXT};
         }}
-        #reminderDesc {{
-            font-size: 13px;
-            color: {MUTED};
-        }}
-        #reminderSchedule {{
-            font-size: 12px;
-            font-weight: 700;
-            color: {ACCENT};
-        }}
-        #reminderNext {{
+        #reminderMeta {{
             font-size: 12px;
             color: {MUTED};
         }}
@@ -887,6 +882,11 @@ def apply_stylesheet(app):
             background: transparent;
             border: none;
             width: 16px;
+        }}
+        QDateEdit::drop-down {{
+            border: none;
+            width: 26px;
+            background: transparent;
         }}
         QCalendarWidget QWidget {{
             background: {SURFACE};

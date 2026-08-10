@@ -5,8 +5,9 @@
 Todo trabalho de melhoria neste projeto DEVE registrar-se em `DONE.txt`:
 
 1. ANTES de qualquer ação (ler arquivos, buscar código, editar, criar), o agente
-   deve consultar `DONE.txt` para saber o que já foi feito e evitar retrabalho
-   ou mudanças duplicadas.
+   deve consultar `DONE.txt` **e** `BUG_FIX.md` para:
+   - saber o que já foi feito (evitar retrabalho ou mudanças duplicadas); e
+   - aprender com os erros anteriores (não repetir causas de bugs já corrigidos).
 
 2. Sempre que uma sessão de trabalho concluir melhorias (novos recursos, mudanças
    de interface, refatorações, correções relevantes), adicione um novo bloco no
@@ -19,6 +20,29 @@ Todo trabalho de melhoria neste projeto DEVE registrar-se em `DONE.txt`:
    (não crie blocos duplicados).
 
 4. Mantenha entradas curtas e específicas (o quê mudou, onde, e o efeito visível).
+
+## Padrão: manter BUG_FIX.md
+
+Correções de bug (defeitos de funcionamento ou aparência) DEVEM ser registradas
+em `BUG_FIX.md`, além do registro normal em `DONE.txt`:
+
+1. O `BUG_FIX.md` também deve ser consultado antes de iniciar qualquer trabalho,
+   junto com o `DONE.txt` — o histórico de causa/solução serve para não repetir
+   erros já diagnosticados.
+
+2. Ao diagnosticar/resolver um bug, adicione um novo bloco no TOPO de `BUG_FIX.md` com:
+   - Data no formato `AAAA-MM-DD`
+   - Título curto do bug (o sintoma relatado)
+   - **Causa**: o que realmente provocava o problema (arquivo:linha quando aplicável)
+   - **Solução**: a mudança aplicada e por que resolve
+
+3. Se já existir um bloco com a mesma data nesta sessão, adicione as correções nele
+   (não crie blocos duplicados).
+
+4. Bugs são diferentes de melhorias: use `DONE.txt` para recursos, mudanças de
+   interface e refatorações; use `BUG_FIX.md` para causa + solução de defeitos.
+
+5. Mantenha entradas curtas e específicas (sintoma → causa → solução).
 
 ## Comandos de verificação
 

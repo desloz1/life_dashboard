@@ -1,5 +1,12 @@
 import requests
 
+try:
+    import urllib3
+
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+except Exception:
+    pass
+
 LATITUDE = -26.9194
 LONGITUDE = -49.0661
 API_URL = "https://api.open-meteo.com/v1/forecast"
@@ -62,7 +69,7 @@ def get_weather():
         "forecast_days": 7,
         "forecast_hours": 24,
     }
-    response = requests.get(API_URL, params=params, headers=HEADERS, timeout=15)
+    response = requests.get(API_URL, params=params, headers=HEADERS, timeout=15, verify=False)
     response.raise_for_status()
     data = response.json()
 

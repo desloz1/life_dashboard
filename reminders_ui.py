@@ -2,6 +2,7 @@ import datetime
 
 import qtawesome as qta
 from PySide6.QtCore import QDate, QSize, Qt, QTime, Signal
+from PySide6.QtGui import QCursor
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -21,6 +22,7 @@ from PySide6.QtWidgets import (
     QSpinBox,
     QStackedWidget,
     QTimeEdit,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -197,80 +199,104 @@ class ReminderCard(QFrame):
         common.make_shadow(self, y=3, blur=16)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(14, 12, 14, 12)
-        layout.setSpacing(14)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(10)
 
         icon_name, icon_color = TYPE_STYLE.get(reminder.trigger_type, TYPE_STYLE["one_time"])
         icon_label = QLabel()
         icon_label.setObjectName("reminderIcon")
         icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         if not reminder.enabled:
-            icon_label.setPixmap(common.icon("fa5s.bell-slash", theme.MUTED, 30))
+            icon_label.setPixmap(common.icon("fa5s.bell-slash", theme.MUTED, 18))
         elif rem.is_snoozed(reminder):
-            icon_label.setPixmap(common.icon("fa5s.moon", theme.MUTED, 30))
+            icon_label.setPixmap(common.icon("fa5s.moon", theme.MUTED, 18))
         else:
-            icon_label.setPixmap(common.icon(icon_name, icon_color, 30))
+            icon_label.setPixmap(common.icon(icon_name, icon_color, 18))
         layout.addWidget(icon_label)
 
         text_col = QVBoxLayout()
-        text_col.setSpacing(4)
+        text_col.setSpacing(2)
         self.title = QLabel(reminder.title)
         self.title.setObjectName("reminderTitle")
         text_col.addWidget(self.title)
-        if reminder.description:
-            self.desc = QLabel(reminder.description)
-            self.desc.setObjectName("reminderDesc")
-            self.desc.setWordWrap(True)
-            text_col.addWidget(self.desc)
-        schedule = rem.describe_schedule(reminder)
-        self.schedule = QLabel(schedule)
-        self.schedule.setObjectName("reminderSchedule")
-        text_col.addWidget(self.schedule)
+        meta_parts = [rem.describe_schedule(reminder)]
         if rem.is_snoozed(reminder):
-            next_text = f"Soneca até {rem.format_next(reminder.snooze_until)}"
+            meta_parts.append(rem.format_next(reminder.snooze_until))
         else:
             next_text = rem.format_next(reminder.next_trigger)
-        self.next = QLabel(next_text)
-        self.next.setObjectName("reminderNext")
-        text_col.addWidget(self.next)
-        text_col.addStretch()
+            if next_text:
+                meta_parts.append(next_text)
+        meta = QLabel(" · ".join(meta_parts))
+        meta.setObjectName("reminderMeta")
+        meta.setToolTip(reminder.description or reminder.title)
+        text_col.addWidget(meta)
         layout.addLayout(text_col, 1)
 
-        buttons = QVBoxLayout()
-        buttons.setSpacing(6)
-        self.snooze_btn = QPushButton(" Soneca")
-        self.snooze_btn.setObjectName("secondaryBtn")
-        self.snooze_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        snooze_menu = QMenu(self.snooze_btn)
+        actions = QWidget()
+        actions.setObjectName("reminderActions")
+        action_layout = QHBoxLayout(actions)
+        action_layout.setContentsMargins(0, 0, 0, 0)
+        action_layout.setSpacing(2)
+
+        snooze_menu = QMenu(self)
         for minutes in (5, 15, 30):
             action = snooze_menu.addAction(f"Adiar {minutes} min")
             action.triggered.connect(
                 lambda checked=False, m=minutes: self.snooze_requested.emit(reminder.id, m)
             )
+        self.snooze_btn = QToolButton()
+        self.snooze_btn.setObjectName("cardBtn")
+        self.snooze_btn.setIcon(qta.icon("fa5s.moon", color=theme.MUTED))
+        self.snooze_btn.setIconSize(QSize(14, 14))
+        self.snooze_btn.setFixedSize(24, 24)
+        self.snooze_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.snooze_btn.setToolTip("Adiar")
         self.snooze_btn.setMenu(snooze_menu)
-        buttons.addWidget(self.snooze_btn)
-        toggle_btn = QPushButton(" Pausar" if reminder.enabled else " Ativar")
-        toggle_btn.setObjectName("toggleBtn")
-        toggle_btn.setIcon(qta.icon("fa5s.pause" if reminder.enabled else "fa5s.play", color=theme.ACCENT))
-        toggle_btn.setIconSize(QSize(13, 13))
-        toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        toggle_btn.clicked.connect(lambda: self.toggle_requested.emit(reminder.id))
-        edit_btn = QPushButton(" Editar")
-        edit_btn.setObjectName("secondaryBtn")
-        edit_btn.setIcon(qta.icon("fa5s.pen", color=theme.TEXT))
-        edit_btn.setIconSize(QSize(13, 13))
+        self.snooze_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+
+        self.toggle_btn = QToolButton()
+        self.toggle_btn.setObjectName("cardBtn")
+        self.toggle_btn.setIcon(qta.icon("fa5s.pause" if reminder.enabled else "fa5s.play", color=theme.ACCENT))
+        self.toggle_btn.setIconSize(QSize(14, 14))
+        self.toggle_btn.setFixedSize(24, 24)
+        self.toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.toggle_btn.setToolTip("Pausar" if reminder.enabled else "Ativar")
+        self.toggle_btn.clicked.connect(lambda: self.toggle_requested.emit(reminder.id))
+
+        edit_btn = QToolButton()
+        edit_btn.setObjectName("cardBtn")
+        edit_btn.setIcon(qta.icon("fa5s.pen", color=theme.MUTED))
+        edit_btn.setIconSize(QSize(14, 14))
+        edit_btn.setFixedSize(24, 24)
         edit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        edit_btn.setToolTip("Editar")
         edit_btn.clicked.connect(lambda: self.edit_requested.emit(reminder.id))
-        delete_btn = QPushButton(" Excluir")
-        delete_btn.setObjectName("dangerBtn")
+
+        delete_btn = QToolButton()
+        delete_btn.setObjectName("cardBtn")
         delete_btn.setIcon(qta.icon("fa5s.trash-alt", color=theme.DANGER))
-        delete_btn.setIconSize(QSize(13, 13))
+        delete_btn.setIconSize(QSize(14, 14))
+        delete_btn.setFixedSize(24, 24)
         delete_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        delete_btn.setToolTip("Excluir")
         delete_btn.clicked.connect(lambda: self.delete_requested.emit(reminder.id))
-        buttons.addWidget(toggle_btn)
-        buttons.addWidget(edit_btn)
-        buttons.addWidget(delete_btn)
-        layout.addLayout(buttons)
+
+        action_layout.addWidget(self.snooze_btn)
+        action_layout.addWidget(self.toggle_btn)
+        action_layout.addWidget(edit_btn)
+        action_layout.addWidget(delete_btn)
+        self.actions_widget = actions
+        actions.setVisible(False)
+        layout.addWidget(actions)
+
+    def enterEvent(self, event):
+        self.actions_widget.setVisible(True)
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        if not self.rect().contains(self.mapFromGlobal(QCursor.pos())):
+            self.actions_widget.setVisible(False)
+        super().leaveEvent(event)
 
 
 class RemindersView(QWidget):

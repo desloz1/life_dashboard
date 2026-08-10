@@ -3,3 +3,12 @@
 # Recorrência: única, diária, semanal ou mensal.
 # Dias (para semanal): Seg, Ter, Qua, Qui, Sex, Sáb, Dom.
 # Ativo: sim ou não.
+ID: ccdee74946204f02a5c7ed4f758585a2
+Título: Teste
+Descrição: Teste
+Recorrência: única
+Horário: 00:00
+Data: 11/08/2026
+Dias: 
+Dia do mês: 1
+Ativo: sim

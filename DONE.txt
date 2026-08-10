@@ -5,6 +5,91 @@ adicionadas ao topo desta lista, com data, em cada sessão de trabalho.
 
 ---
 
+## 2026-08-10 — Ícone para o lançador (run.bat)
+
+- Criado `run.ico` (16–256 px) gerado por script temporário (`%TEMP%\opencode`) com PIL: quadrado arredondado no azul da marca (ACCENT `#5b8cff`) + triângulo de "play" branco — mesmo visual do ícone da bandeja.
+- `.bat` não suporta ícone próprio no Windows; criado atalho `Iniciar Organizador.lnk` apontando para `run.bat` com `run.ico` como ícone e working directory no projeto.
+
+---
+
+## 2026-08-10 — Tarefas: card compacto estilo Lembretes
+
+- `tasks_ui.py` (`TaskCard`): card reduzido para uma linha compacta (~50px) no padrão do `ReminderCard` — checkbox à esquerda + título (14px) + linha de meta única (`#taskMeta`) com prioridade · categoria · prazo ("Alta · Trabalho · Atrasada"), altura de ~50px (antes ~100px+).
+- Descrição oculta no card (visível em tooltip); ações Editar/Excluir viraram ícones de 24px (`cardBtn`) que aparecem só no hover do card; título riscado ao concluir agora via QSS (`text-decoration: line-through`), removida a lógica de fonte em Python.
+- Card atrasado ganhou destaque `[overdue="true"]` (fundo/borda vermelhos), mesmo padrão do `#reminderCard[overdue="true"]`; concluído mantém estilo esmaecido.
+- `theme.py`: `#taskCard[overdue="true"]`; `#taskTitle` de concluído com risco; `#taskMeta` mantida como linha única 12px. Badges (`#prioBadge`/`#catBadge`/`#dueBadge`) preservadas (ainda usadas pela Agenda/Notas).
+- Header, barra de progresso, filtros (status/prioridade), busca e ordenação mantidos.
+
+---
+
+## 2026-08-10 — Correção da aba Clima (SSL) + testes de renderização
+
+- `weather.py`: requisição à Open-Meteo com `verify=False` (cadeia TLS não confiável
+  na máquina causava `CERTIFICATE_VERIFY_FAILED` e a aba Clima ficava sem conteúdo,
+  só com mensagem de erro); aviso suprimido via `urllib3.disable_warnings`, mesmo
+  padrão do `scraper.py`. Detalhes em `BUG_FIX.md`.
+- Testes de regressão (offscreen, `%TEMP%\opencode`): `get_weather()` retorna 24 h +
+  7 dias; aba Clima renderiza com relógio, cards atuais, faixa de 24 h, previsão de
+  7 dias e gráfico de tendência sem exceções; imports de `main` OK.
+
+## 2026-08-10 — Lembretes: card compacto redesenhado
+
+- `reminders_ui.py` (`ReminderCard`): card reduzido de ~3 linhas de texto + coluna de 4 botões para uma única linha compacta — ícone 18px + título (14px) + linha de meta com programação e próximo disparo ("Diária às 08:00 · Hoje às 08:00"), altura de ~50px (antes ~100px+).
+- Descrição oculta no card (visível em tooltip); ações (Adiar, Pausar/Ativar, Editar, Excluir) viraram ícones pequenos de 24px que aparecem só no hover do card, no padrão `cardBtn` das Notícias.
+- `theme.py`: `#reminderIcon` sem `font-size`/min-width de 40px; `#reminderTitle` 14px; `#reminderDesc`, `#reminderSchedule` e `#reminderNext` substituídos por `#reminderMeta` (linha única 12px).
+
+---
+
+## 2026-08-10 — Rotina BUG_FIX.md documentada no AGENTS.md
+
+- `AGENTS.md`: nova seção "Padrão: manter BUG_FIX.md" — correções de bug (causa + solução) passam a ser registradas em `BUG_FIX.md` no topo do arquivo, com data, título, causa (arquivo:linha) e solução; complementa o `DONE.txt`.
+- `AGENTS.md`: consulta obrigatória de `DONE.txt` **e** `BUG_FIX.md` antes de qualquer ação — objetivo: saber o que já foi feito (evitar retrabalho) e aprender com as causas de bugs já corrigidos (não repeti-las).
+- Criado `BUG_FIX.md` com os bugs corrigidos no projeto (run.bat/PATH, dependências ausentes, SSL nas notícias, cantos do QDateEdit, cards do Início no hover, compatibilidade Python 3.9).
+
+---
+
+## 2026-08-10 — Correção: cantos do campo data do lembrete quebrados
+
+- `theme.py`: adicionada regra `QDateEdit::drop-down` (`border: none; width: 26px; background: transparent;`).
+- O `QDateEdit` com `setCalendarPopup(True)` desenhava o sub-controle do botão de calendário (drop-down) com fundo opaco quadrado sobre o canto, deixando os cantos superior e inferior direitos "quebrados" ao focar/clicar o campo. O fundo transparente faz o arredondamento do widget aparecer; os 4 cantos ficam simétricos (verificado por análise de pixels nos temas claro e escuro).
+
+---
+
+## 2026-08-10 — Nova fonte de notícias: ND Mais
+
+- `scraper.py`: nova fonte `ND Mais` (`ndmais.com.br/blumenau/`), com `_fetch_ndmais(limit)` extraindo as 10 primeiras notícias da seção regional.
+- Seleção ignora o carrossel de vídeos (`.swiper`) e a barra lateral "mais acessadas" (`#mais-acessadas-sidebar`); a ordem segue manchete → destaques → feed de notícias.
+- Categoria vem do `a.hat`/`a.categoria` do card; quando ausente, é derivada do primeiro segmento da URL (`_path_category`). Data extraída do `time[@datetime]` (ISO convertida via `_iso_date`, agora compartilhada com a fonte O Blumenauense). Duplicatas mescladas priorizando o item mais completo.
+- Nenhuma mudança na UI: botão de fonte e carregamento gerados automaticamente a partir de `SOURCES`.
+
+---
+
+## 2026-08-10 — Nova fonte de notícias: O Blumenauense
+
+- `scraper.py`: nova fonte `O Blumenauense` (`oblumenauense.com.br`), com `_fetch_oblumenauense(limit)` extraindo as 10 primeiras notícias do tema TagDiv (divs `td_module`, título `h3/a`, categoria `td-post-category`, data `time`).
+- Data ISO convertida para `dd/mm/aaaa hh:mm` (compatível com o `_relative_time` da aba Notícias); URLs de imagem redimensionadas (`-356x220`) limpas; duplicatas mescladas priorizando o item com categoria/data/imagem.
+- Site usa cadeia TLS incompleta: requisição com `verify=False` (aviso suprimido via `urllib3.disable_warnings`).
+- `ajnoticias.com.br` tinha o mesmo problema de SSL (fonte já existente, falhando em silêncio): `_fetch_ajnoticias` também passou a usar `verify=False`.
+- Aba Notícias não precisou de mudanças: botão de fonte e busca em `SOURCES` são gerados automaticamente.
+
+---
+
+## 2026-08-10 — run.bat com instalação automática
+
+- `run.bat` agora detecta e instala automaticamente o que faltar:
+  - **Python**: procura `python.exe` no PATH (expansão nativa do cmd, sem `where.exe`), instalações por usuário (`%LocalAppData%\Programs\Python\Python3xx`), fallback `C:\PYTHON` e launcher `py`; exige Python ≥ 3.9. Se ausente, tenta `winget` (via caminho completo, pois pode não estar no PATH) e, como fallback, baixa o instalador oficial 3.12.10 da python.org e instala silencioso por usuário (`PrependPath=1`).
+  - **Dependências**: roda `import PySide6, qtawesome, requests, keyring, lxml`; se falhar, executa `ensurepip` + `pip install -r requirements.txt` e revalida.
+- Sub-rotinas `:install_python` e `:install_deps`; mensagens claras quando algo não pode ser instalado.
+
+---
+
+## 2026-08-10 — Correção: app não iniciava via run.bat
+
+- `run.bat`: substituída a checagem `where python` (dependia do `where.exe`, que não é encontrado quando `C:\Windows\System32` está fora do PATH) pela expansão nativa do cmd `for %%i in (python.exe) do set "PYTHON_EXE=%%~$PATH:i"`, que procura o interpretador diretamente no PATH e usa o caminho absoluto para executar.
+- Ambiente: única instalação Python (3.12 em `C:\PYTHON`) estava sem as dependências do app; instaladas via `requirements.txt` (PySide6 6.11.1, qtawesome, requests, lxml, keyring). App volta a abrir normalmente.
+
+---
+
 ## 2026-08-09 — Aba Notas + correção de compatibilidade Python
 
 ### Nova aba "Notas" (sidebar habilitada, Ctrl+7)

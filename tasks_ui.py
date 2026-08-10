@@ -2,7 +2,7 @@ import datetime
 
 import qtawesome as qta
 from PySide6.QtCore import QDate, QSize, Qt, Signal
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QCursor
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QScrollArea,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -125,13 +126,16 @@ class TaskCard(QFrame):
         self.setObjectName("taskCard")
         if task.completed:
             self.setProperty("completed", True)
+        state, _ = _due_state(task, datetime.date.today())
+        if state == "overdue" and not task.completed:
+            self.setProperty("overdue", True)
         self.style().unpolish(self)
         self.style().polish(self)
         common.make_shadow(self, y=3, blur=16)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(14, 12, 14, 12)
-        layout.setSpacing(12)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(10)
 
         self.checkbox = QCheckBox()
         self.checkbox.setObjectName("taskCheck")
@@ -141,66 +145,64 @@ class TaskCard(QFrame):
         layout.addWidget(self.checkbox)
 
         text_col = QVBoxLayout()
-        text_col.setSpacing(4)
+        text_col.setSpacing(2)
         self.title = QLabel(task.title)
         self.title.setObjectName("taskTitle")
         text_col.addWidget(self.title)
-        if task.description:
-            desc = QLabel(task.description)
-            desc.setObjectName("taskMeta")
-            desc.setWordWrap(True)
-            text_col.addWidget(desc)
 
-        badges = QHBoxLayout()
-        badges.setSpacing(6)
+        meta_parts = []
         if task.priority:
-            prio = QLabel(PRIORITY_NAMES.get(task.priority, task.priority))
-            prio.setObjectName("prioBadge")
-            prio.setProperty("level", task.priority)
-            prio.style().unpolish(prio)
-            prio.style().polish(prio)
-            badges.addWidget(prio)
+            meta_parts.append(PRIORITY_NAMES.get(task.priority, task.priority))
         if task.category:
-            cat = QLabel(task.category)
-            cat.setObjectName("catBadge")
-            badges.addWidget(cat)
+            meta_parts.append(task.category)
         state, label = _due_state(task, datetime.date.today())
         if state != "none":
-            due = QLabel(label)
-            due.setObjectName("dueBadge")
-            due.setProperty("state", state)
-            due.style().unpolish(due)
-            due.style().polish(due)
-            badges.addWidget(due)
-        badges.addStretch()
-        text_col.addLayout(badges)
-        text_col.addStretch()
+            meta_parts.append(label)
+        if meta_parts:
+            meta = QLabel(" · ".join(meta_parts))
+            meta.setObjectName("taskMeta")
+            meta.setToolTip(task.description or task.title)
+            text_col.addWidget(meta)
         layout.addLayout(text_col, 1)
 
-        buttons = QHBoxLayout()
-        buttons.setSpacing(6)
-        edit_btn = QPushButton(" Editar")
-        edit_btn.setObjectName("secondaryBtn")
-        edit_btn.setIcon(qta.icon("fa5s.pen", color=theme.TEXT))
-        edit_btn.setIconSize(QSize(13, 13))
+        actions = QWidget()
+        actions.setObjectName("taskActions")
+        action_layout = QHBoxLayout(actions)
+        action_layout.setContentsMargins(0, 0, 0, 0)
+        action_layout.setSpacing(2)
+
+        edit_btn = QToolButton()
+        edit_btn.setObjectName("cardBtn")
+        edit_btn.setIcon(qta.icon("fa5s.pen", color=theme.MUTED))
+        edit_btn.setIconSize(QSize(14, 14))
+        edit_btn.setFixedSize(24, 24)
         edit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        edit_btn.setToolTip("Editar")
         edit_btn.clicked.connect(lambda: self.edit_requested.emit(task.id))
-        delete_btn = QPushButton(" Excluir")
-        delete_btn.setObjectName("dangerBtn")
+
+        delete_btn = QToolButton()
+        delete_btn.setObjectName("cardBtn")
         delete_btn.setIcon(qta.icon("fa5s.trash-alt", color=theme.DANGER))
-        delete_btn.setIconSize(QSize(13, 13))
+        delete_btn.setIconSize(QSize(14, 14))
+        delete_btn.setFixedSize(24, 24)
         delete_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        delete_btn.setToolTip("Excluir")
         delete_btn.clicked.connect(lambda: self.delete_requested.emit(task.id))
-        buttons.addWidget(edit_btn)
-        buttons.addWidget(delete_btn)
-        layout.addLayout(buttons)
 
-        self._apply_completed_style()
+        action_layout.addWidget(edit_btn)
+        action_layout.addWidget(delete_btn)
+        self.actions_widget = actions
+        actions.setVisible(False)
+        layout.addWidget(actions)
 
-    def _apply_completed_style(self):
-        font = QFont(self.title.font())
-        font.setStrikeOut(self.task.completed)
-        self.title.setFont(font)
+    def enterEvent(self, event):
+        self.actions_widget.setVisible(True)
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        if not self.rect().contains(self.mapFromGlobal(QCursor.pos())):
+            self.actions_widget.setVisible(False)
+        super().leaveEvent(event)
 
 
 class TasksView(QWidget):
