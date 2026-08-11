@@ -252,12 +252,12 @@ class NewsCard(QFrame):
         common.make_shadow(self, y=2, blur=14)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setContentsMargins(12, 8, 12, 8)
         layout.setSpacing(12)
 
         if item.get("show_thumb", True):
             self.thumb = QLabel()
-            self.thumb.setFixedSize(100, 74)
+            self.thumb.setFixedSize(100, 60)
             self.thumb.setObjectName("newsThumb")
             self.thumb.setAlignment(Qt.AlignmentFlag.AlignCenter)
             pixmap = item.get("pixmap")
@@ -308,12 +308,12 @@ class NewsCard(QFrame):
         self.title = QLabel(item["title"])
         self.title.setObjectName("newsTitle")
         self.title.setWordWrap(True)
-        self.title.setMaximumHeight(38)
+        self.title.setMaximumHeight(34)
         text_col.addWidget(self.title)
         text_col.addStretch()
 
         layout.addLayout(text_col, 1)
-        self.setMinimumHeight(96)
+        self.setMinimumHeight(80)
         self._update_actions_visibility()
 
     def _icon_btn(self, name, tooltip):
@@ -499,6 +499,7 @@ class NewsView(QWidget):
         self._undo_bar = None
         self._undo_timer = None
         self._hovered_url = None
+        self._cleared = False
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._setup_shortcuts()
 
@@ -523,6 +524,14 @@ class NewsView(QWidget):
         self.refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.refresh_btn.clicked.connect(self.load_news)
         header.addWidget(self.refresh_btn)
+        self.clear_btn = QPushButton(" Limpar")
+        self.clear_btn.setIcon(qta.icon("fa5s.trash-alt", color=theme.MUTED))
+        self.clear_btn.setIconSize(QSize(15, 15))
+        self.clear_btn.setObjectName("secondaryBtn")
+        self.clear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.clear_btn.setToolTip("Limpar a lista de notícias carregadas")
+        self.clear_btn.clicked.connect(self._clear_feed)
+        header.addWidget(self.clear_btn)
         root.addLayout(header)
 
         toolbar = QHBoxLayout()
@@ -582,7 +591,7 @@ class NewsView(QWidget):
         self.list_host = QWidget()
         self.list_layout = QVBoxLayout(self.list_host)
         self.list_layout.setContentsMargins(6, 0, 6, 6)
-        self.list_layout.setSpacing(10)
+        self.list_layout.setSpacing(4)
         self.list_layout.addStretch()
         self.scroll.setWidget(self.list_host)
         root.addWidget(self.scroll, 1)
@@ -614,6 +623,7 @@ class NewsView(QWidget):
     def load_news(self):
         if self._worker and self._worker.isRunning():
             return
+        self._cleared = False
         self.status.setText("Carregando…")
         self.refresh_btn.setEnabled(False)
         self._clear_cards()
@@ -640,6 +650,14 @@ class NewsView(QWidget):
         self._worker.finished.connect(self._on_finished)
         self._worker.start()
 
+    def _clear_feed(self):
+        self._cleared = True
+        if self._worker and self._worker.isRunning():
+            self._worker.requestInterruption()
+        self._items = []
+        self._render()
+        self.status.setText("Lista limpa — Atualizar para recarregar")
+
     def _clear_undo(self):
         if self._undo_timer is not None:
             self._undo_timer.stop()
@@ -656,6 +674,8 @@ class NewsView(QWidget):
 
     def _on_loaded(self, items):
         common.remove_shimmers(self.list_layout)
+        if self._cleared:
+            return
         self._items = []
         for item in items:
             item["pixmap"] = common.pixmap_from_bytes(item.pop("image_bytes", None))

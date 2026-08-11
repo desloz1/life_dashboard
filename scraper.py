@@ -15,6 +15,7 @@ INFORME_URL = "https://www.informeblumenau.com/"
 AJNOTICIAS_URL = "https://ajnoticias.com.br/"
 OBLUMENAUENSE_URL = "https://oblumenauense.com.br/"
 NDMAIS_URL = "https://ndmais.com.br/blumenau/"
+TECNOBLOG_URL = "https://tecnoblog.net/"
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -376,6 +377,64 @@ def _fetch_ndmais(limit):
     return list(by_url.values())[:limit]
 
 
+def _tecnoblog_image(article):
+    for img in article.xpath(".//img"):
+        for attr in ("data-src", "src", "data-lazy-src"):
+            value = (img.get(attr) or "").strip()
+            if value and not value.startswith("data:image"):
+                return value
+    return ""
+
+
+def _tecnoblog_date(article):
+    for time_el in article.xpath(".//time"):
+        iso = (time_el.get("datetime") or "").strip()
+        if iso:
+            return _iso_date(iso)
+    return ""
+
+
+def _fetch_tecnoblog(limit):
+    response = requests.get(TECNOBLOG_URL, headers=HEADERS, timeout=15)
+    response.raise_for_status()
+    tree = html.fromstring(response.content)
+
+    items = []
+    seen = set()
+    for article in tree.xpath("//article"):
+        heading = article.xpath(".//h2/a | .//h3/a | .//h2 | .//h3")
+        if not heading:
+            continue
+        title = _clean(heading[0].text_content())
+        if not title:
+            continue
+        links = article.xpath(".//a[contains(@href, 'tecnoblog.net')]")
+        href = ""
+        for link in links:
+            candidate = (link.get("href") or "").strip()
+            if candidate and "achados.tecnoblog.net" not in candidate:
+                href = candidate
+                break
+        if not href or href in seen:
+            continue
+        seen.add(href)
+        cat_links = article.xpath('.//span[contains(@class, "catname")] | .//a[contains(@class, "cat")]')
+        category = _clean(cat_links[0].text_content()) if cat_links else "Tecnologia"
+        items.append(
+            {
+                "title": title,
+                "url": href,
+                "image": _bigger_image(_tecnoblog_image(article)),
+                "category": category or "Tecnologia",
+                "date": _tecnoblog_date(article),
+                "source": "TecnoBlog",
+            }
+        )
+        if len(items) >= limit:
+            return items
+    return items
+
+
 SOURCES = {
     "NSC Total": {"url": NSC_URL, "fetch": _fetch_nsc},
     "Informe Blumenau": {"url": INFORME_URL, "fetch": _fetch_informe},
@@ -384,9 +443,57 @@ SOURCES = {
     "ND Mais": {"url": NDMAIS_URL, "fetch": _fetch_ndmais},
 }
 
+TECH_SOURCES = {
+    "TecnoBlog": {"url": TECNOBLOG_URL, "fetch": _fetch_tecnoblog},
+}
+
+
+def fetch_tech_news(limit=10):
+    """Coleta as notícias de tecnologia mais recentes (TecnoBlog)."""
+    return _fetch_tecnoblog(limit)
+
 
 def fetch_news(source="NSC Total", limit=10):
     entry = SOURCES.get(source)
     if entry is None:
         raise ValueError(f"Fonte desconhecida: {source}")
     return entry["fetch"](limit)
+
+
+def fetch_titles(limit=50):
+    """Coleta títulos únicos das notícias de todas as fontes (mais recentes primeiro por fonte)."""
+    titles = []
+    seen = set()
+    for source in SOURCES:
+        try:
+            items = SOURCES[source]["fetch"](limit)
+        except Exception:
+            continue
+        for item in items:
+            title = _clean(item.get("title"))
+            if not title:
+                continue
+            key = title.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            titles.append(title)
+            if len(titles) >= limit:
+                return titles
+    return titles
+
+
+def save_daily_titles(limit=50, directory=None):
+    """Gera o arquivo noticias_mes_dia_ano.txt com os títulos do dia. Retorna o caminho."""
+    import datetime
+    from pathlib import Path
+
+    titles = fetch_titles(limit)
+    base = Path(directory) if directory else Path(__file__).resolve().parent
+    today = datetime.date.today()
+    filename = f"noticias_{today.month:02d}_{today.day:02d}_{today.year}.txt"
+    path = base / filename
+    with open(path, "w", encoding="utf-8") as fh:
+        for i, title in enumerate(titles, 1):
+            fh.write(f"{i}. {title}\n")
+    return str(path)

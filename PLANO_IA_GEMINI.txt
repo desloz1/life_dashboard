@@ -1,0 +1,112 @@
+# Plano: Integração de IA (Gemini API) ao Life Dashboard
+
+Decisões fixadas:
+- Provedor: **Gemini API** (Google) — gerenciável/qualidade boa, com opção gratuita.
+- Embeddings pelo **mesmo provedor** (busca semântica) — sem dependências novas.
+- Ordem de implementação: 1) comando de texto natural 2) resumo diário
+  3) chat assistente 4) autoclassificação 5) reescrita de títulos
+  6) busca semântica.
+
+Padrão do projeto seguido em todas as fases:
+- Módulo puro de regras (`ai.py`, sem PySide6), UI em módulos `*_ui.py`,
+  workers como QThread com sinais `finished_ok`/`failed`
+  (padrão DashNewsWorker / PriceWorker).
+- Degradação graciosa: sem chave/rede -> feature desabilitada com status
+  claro, app funciona normal (nunca quebra).
+- Chave de API somente no keyring, nunca em código/JSON.
+- `requirements.txt` sem novas dependências (cliente REST via `requests`).
+- Validação offscreen por fase em `%TEMP%\opencode` + `import main` OK.
+- Registro de melhorias em `DONE.txt` e de bugs em `BUG_FIX.md` ao fim de
+  cada sessão (AGENTS.md).
+
+---
+
+## Fase 0 — Base de IA (pré-requisito de tudo)
+
+Novo módulo `ai.py` (puro, sem UI):
+- Cliente REST via `requests` chamando `generativelanguage.googleapis.com`
+  (endpoint v1beta).
+- `call_llm(prompt, system=None, json_schema=None)` -> texto ou dict com
+  `responseMimeType: application/json`; modelo padrão `gemini-2.5-flash`
+  (configurável).
+- `embeddings(textos)` via modelo `text-embedding-004` e `cosine(a, b)`
+  para busca semântica.
+- `available()` (existe chave configurada?), `AIError`, timeout, logging
+  via `log.py` e falha silenciosa.
+
+Nota aberta sobre TLS:
+- A máquina tem histórico de falha de cadeia TLS com `requests`
+  (ver BUG_FIX.md). Google usa CA confiável, então começo com verificação
+  padrão (`verify=True`). Só adoto o padrão `verify=False` do `scraper.py`
+  se o erro se reproduzir — mas enviar chave de API por TLS não verificado
+  é risco, então a preferência é manter a verificação.
+
+Configuração (`preferences.py`):
+- Seção "Gemini API" no `PreferencesDialog` (checkbox habilitar + botão
+  "Configurar Gemini…" no padrão do SMTP): chave no keyring
+  (serviço `OrganizadorPessoal`, usuário `gemini`), modelo no QSettings.
+
+Validação Fase 0:
+- Script offscreen em `%TEMP%\opencode`: chamada real opcional + chamada
+  com chave falsa (deve levantar `AIError` sem crash), `import main` OK,
+  diálogo de Preferências renderizado.
+
+---
+
+## Fase 1 — Comando de texto natural (parse)
+
+- `ai.py`: `parse_command(texto)` -> JSON
+  `{tipo: tarefa|lembrete|nota, titulo, descricao, prioridade, categoria,
+  prazo, recorrencia, hora, tipo_lembrete}`.
+- `command_ui.py`: `CommandDialog` (input + botão "Interpretar" com
+  `CommandWorker` QThread + resultado pré-preenchido para o usuário
+  confirmar).
+- Entrada: botão "Texto -> Tarefa/Lembrete" no cabeçalho de Tarefas e
+  Lembretes + atalho no dashboard.
+- Confirmação: resultado preenche `TaskDialog`/`ReminderDialog` existentes
+  (sem bypass de validação).
+
+## Fase 2 — Resumo diário (briefing matinal)
+
+- `ai.py`: `daily_briefing(tarefas, lembretes, titulos_noticias, clima)`
+  -> markdown.
+- `dashboard_ui.py`: seção "Resumo do dia" no topo do Início +
+  `DashBriefingWorker` (QThread); cache em `resumo_dia.json`
+  (padrão `estado_noticias.json`) para não re-gerar a cada F5; botão
+  Atualizar e estado vazio.
+- `main.py`: `_switch_view` para Início dispara refresh do resumo.
+
+## Fase 3 — Chat assistente
+
+- `ai.py`: `chat(historico, contexto_dados)` montando prompt com snapshot
+  real (tarefas atrasadas, lembretes de hoje, notas, preços em queda).
+- `chat_ui.py`: `AIChatDialog` (lista de mensagens + campo, padrão visual
+  dos cards do tema).
+- Acesso: menu da bandeja "Assistente IA" + botão no dashboard.
+  Não-modal, `shutdown()` no `closeEvent`.
+
+## Fase 4 — Autoclassificação (tarefas/notas)
+
+- `ai.py`: `classify_item(titulo, descricao)` -> `{prioridade, categoria}`
+  (JSON).
+- `tasks_ui.py` / `notes_ui.py`: botão "Sugerir (IA)" no `TaskDialog` /
+  `NotesDialog` (preenche prioridade/categoria) — sempre manual, nunca
+  auto no save (custo/latência).
+
+## Fase 5 — Reescrita de títulos
+
+- `ai.py`: `clean_title(texto)` -> título curto, sem sufixo de site e sem
+  truncamento.
+- `news.py`: botão "Melhorar título" por card + "Melhorar títulos" em lote
+  no cabeçalho.
+- `compras_ui.py`: ação no hover do `ProductCard` (corrige nome bruto do
+  HTML).
+
+## Fase 6 — Busca semântica
+
+- `ai.py`: `semantic_search(consulta, itens, top_k)` com cache de
+  embeddings em `cache/embeddings.json` (hash do texto -> vetor) para não
+  re-embeddar a cada tecla.
+- `search_ui.py`: pill/toggle "IA" no `GlobalSearchDialog` — ordena por
+  similaridade quando ativo e a API disponível; senão, fallback automático
+  para a busca por substring atual.

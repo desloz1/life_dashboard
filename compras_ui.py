@@ -2,7 +2,7 @@ import datetime
 
 import qtawesome as qta
 from PySide6.QtCore import QSize, Qt, QThread, QUrl, Signal
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import QCursor, QDesktopServices
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,

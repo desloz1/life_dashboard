@@ -1,0 +1,101 @@
+# O que vai acontecer: o app vai ganhar "inteligência" (IA)
+
+Este texto explica em linguagem simples o que será feito no Organizador
+Pessoal. Não é preciso entender de programação para ler isso.
+
+---
+
+## A ideia em uma frase
+
+O app vai aprender a entender o que você escreve em português normal e a
+ajudar você com tarefas do dia a dia, usando um "cérebro" de inteligência
+artificial (o Gemini, do Google).
+
+## De onde vem a inteligência?
+
+- É um serviço online do Google. O app conversa com ele pela internet
+  usando uma chave (como uma senha) que você mesmo configura.
+- Alguns recursos precisam de internet; se não tiver internet ou chave,
+  o app simplesmente não mostra esses recursos — nada quebra.
+- Suas informações pessoais (tarefas, lembretes, notas) só são enviadas
+  para a IA quando você pede um recurso de IA. A chave fica guardada
+  protegida no Windows (mesmo esquema da senha de e-mail).
+
+---
+
+## O que será feito, passo a passo
+
+### 1) Falar com o app do seu jeito ("texto → tarefa/lembrete")
+
+Hoje, para criar uma tarefa ou lembrete, você preenche vários campos
+(título, data, hora, prioridade...). Com a IA, você digita uma frase e o
+app preenche tudo para você:
+
+- "Agendar reunião amanhã às 10h com alta prioridade"
+- "Pagar conta de luz no dia 15 todo mês"
+
+O app entende a frase e já abre a tela de confirmação com tudo preenchido.
+Você apenas confirma.
+
+### 2) Resumo do dia ("briefing matinal")
+
+Ao abrir o app de manhã, ele monta um resumo em linguagem natural:
+- O que você tem de tarefa hoje e o que está atrasado.
+- Lembretes que vão disparar.
+- Principais notícias.
+- Previsão do tempo.
+
+Em vez de você olhar cada aba, lê um resumo só.
+
+### 3) Assistente de conversa (chat)
+
+Um "chat" dentro do app onde você pergunta coisas sobre seus próprios dados:
+
+- "O que tenho para fazer hoje?"
+- "Minhas tarefas de trabalho atrasadas?"
+- "Tem algum preço que chegou na meta?"
+
+O app olha seus dados reais e responde.
+
+### 4) Classificação automática
+
+Quando você cria uma tarefa ou nota, um botão "Sugerir" preenche
+automaticamente a prioridade (Alta/Média/Baixa) e a categoria (Trabalho,
+Casa, Estudos...). Você sempre pode aceitar ou mudar.
+
+### 5) Títulos mais claros
+
+- Notícias: alguns títulos vêm cortados ou com sufixos estranhos do site;
+  a IA deixa o título curto e claro.
+- Compras: os nomes dos produtos vêm "sujos" do site; a IA limpa
+  (ex.: "KABUM ... PRETO - 123456" → "Teclado mecânico preto").
+
+### 6) Busca inteligente ("semântica")
+
+A busca atual só acha palavras iguais. Com a IA, você pode procurar por
+ideia:
+
+- Buscar "comprar presente de aniversário" acha a nota
+  "lembrar do presente da mãe dia 12".
+
+---
+
+## O que NÃO vai mudar
+
+- O visual e as outras funções continuam iguais.
+- A IA nunca age sozinha: tudo é proposto, você confirma.
+- Não precisa instalar nada novo (funciona com o que o app já tem).
+
+---
+
+## Ordem de trabalho
+
+1. A base (conectar o app ao Gemini) — invisível para você.
+2. Texto → tarefa/lembrete.
+3. Resumo do dia.
+4. Chat assistente.
+5. Classificação automática.
+6. Melhorar títulos.
+7. Busca inteligente.
+
+Cada etapa é testada antes de passar para a próxima.

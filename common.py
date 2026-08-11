@@ -103,8 +103,8 @@ class SkeletonShimmer(QFrame):
         painter.fillRect(rect, QColor(theme.CARD))
         grad = QLinearGradient(rect.topLeft(), rect.topRight())
         pos = self._offset
-        left = max(0.0, pos - 0.15)
-        mid1 = max(0.0, pos - 0.02)
+        left = min(1.0, max(0.0, pos - 0.15))
+        mid1 = min(1.0, max(0.0, pos - 0.02))
         mid2 = min(1.0, pos + 0.02)
         right = min(1.0, pos + 0.15)
         highlight = QColor(theme.ACCENT_SOFT) if theme.CURRENT_THEME == "light" else QColor(theme.THUMB_BG).lighter(120)

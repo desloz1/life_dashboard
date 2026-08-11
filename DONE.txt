@@ -5,6 +5,92 @@ adicionadas ao topo desta lista, com data, em cada sessão de trabalho.
 
 ---
 
+## 2026-08-11 — Mesclagem da pasta `to_compare` no projeto raiz
+
+- A pasta `to_compare` continha a versão mais nova (2026-08-11) do app; a raiz estava em 2026-08-10. Mesclado `to_compare` → raiz (robo-copy, sem `__pycache__`).
+- Código/UI atualizado na raiz: `agenda_ui.py`, `common.py`, `compras_ui.py`, `dashboard_ui.py`, `main.py`, `news.py`, `notes.py`, `notes_ui.py`, `notify.py`, `preferences.py`, `reminders.py`, `reminders_ui.py`, `scraper.py`, `tasks_ui.py`, `theme.py`, `weather.py`, `weather_ui.py`.
+- Novos arquivos trazidos de `to_compare`: aba **Webcams** (`webcams.py`, `webcams_ui.py`, `Ctrl+9` no `main.py`) e documentos de planejamento `PLANO_COMPRAS_SCRAPLING.txt`, `PLANO_GMAIL_API.txt`, `PLANO_IA_GEMINI.txt`, `PLANO_MIGRACAO_C_SHARP.txt`, `PLANO_SERVIDOR_24H.txt`, mais `EXPLICACAO_IA_LEIGO.txt` e `noticias_08_11_2026.txt`.
+- Dados de estado atualizados: `compras.json`, `estado_noticias.json`, `lembretes.txt`, `notas.json`, `tarefas.txt`, `requirements.txt`, e novos `cache/images/*` e `anexos/*`.
+- Docs sincronizados: `DONE.txt`, `BUG_FIX.md`, `AGENTS.md`.
+- Validação: `import main` OK; `MainWindow` constrói as 9 abas (com Webcams) via `theme.apply_theme` nos temas claro/escuro.
+
+---
+
+## 2026-08-11 — Nova aba "Webcams" (Blumenau SC ao vivo)
+
+- `webcams.py` (novo): fontes de câmeras de Blumenau em `CAMERA_SOURCES` (Rio Itajaí-Açú no Clube Náutico América e Avenida Beira-Rio, ambas BNU.tv) e `fetch_webcams()` — para cada página faz scraping da URL HLS (`contentUrl` JSON-LD ou `<video><source src>`), do poster (snapshot) e do nome; a URL de stream conhecida serve de fallback se a página falhar; falha em uma fonte não derruba as demais.
+- `webcams_ui.py` (novo): `WebcamsView` (cabeçalho com status + botão Atualizar, lista rolável de cards) e `WebcamCard` — reprodução ao vivo via `QMediaPlayer`/`QVideoWidget` com HLS (mudo), badge de estado "AO VIVO" (verde) / "OFFLINE" (vermelho) / "Carregando…", poster de snapshot quando disponível, botões "abrir no navegador" e "recarregar transmissão"; `set_active()` pausa/retoma ao trocar de aba (não decodifica vídeo com a aba oculta) e `shutdown()` encerra players; `WebcamWorker` (QThread) busca as câmeras e baixa os posters em segundo plano.
+- `main.py`: nova aba **Webcams** (`fa5s.video`, `Ctrl+9`, 9ª entrada do sidebar) com `WebcamsView` no stack, `_switch_view` (pausa/retoma ao entrar/sair), F5 (row 8 → recarrega), `_refresh_lists`, `closeEvent` → `shutdown()`.
+- `theme.py`: estilos `#webcamCard` (+`[state=live/offline]`), `#webcamIcon`, `#webcamName`, `#webcamLoc`, `#webcamState` (3 estados), `#webcamVideoArea`, `#webcamPoster`; `webcamCard` em `SHADOW_OBJECT_NAMES`.
+- Validação offscreen em `%TEMP%\opencode`: `fetch_webcams` retorna stream HLS (Rio Itajaí-Açú, confirmado ao vivo) e offline (Beira-Rio); render dos 2 cards nos temas claro/escuro; transição real do player para "AO VIVO" (página de vídeo ativa) e "OFFLINE" com loop de eventos; sweep das 9 abas; `import main` OK.
+
+---
+
+
+- `theme.py` (`#reminderCard[done="true"] #reminderTitle`): adicionado `text-decoration: line-through` — ao marcar o checkbox do lembrete como concluído (estado `done`), o título agora aparece riscado, consistente com Tarefas/Agenda. Válido nos temas claro e escuro (stylesheet único).
+- Validação: QSS gerado contém a regra com `line-through` e `import main` OK.
+
+---
+
+## 2026-08-11 — Plano: app 24h/dia em servidor na nuvem
+
+- `PLANO_SERVIDOR_24H.txt` (novo): plano para rodar a lógica do app 24h/dia num servidor na nuvem (decisões fixadas: VPS Linux Ubuntu via systemd — não Docker; servidor é a única fonte de dados; notificação por e-mail SMTP; Chromium headless para preços; daemon headless novo reusando os módulos puros que não importam PySide6). Inclui recomendação de provedores (Hetzner CX22 ~€3,79/mês ou Oracle Free Tier), 5 fases (service.py + CLI, headless Chromium, deploy.ps1, provisionamento + unit systemd com `TZ=America/Sao_Paulo`, documentação de operação) e pontos críticos (fuso horário, keyring/QSettings no Linux, duplicidade de notificação PC×servidor).
+
+## 2026-08-11 — Plano de migração para C#/WPF
+
+- `PLANO_MIGRACAO_C_SHARP.txt` (novo): plano de reescrita total do app em C#/.NET 8 + WPF — objetivo de executável único self-contained; decisões fixadas (WPF, dados em `%APPDATA%` com migração automática, paridade total dos 5 formatos de arquivo); mapeamento de dependências Python→.NET, estrutura do projeto, camada de dados/UI por aba, 8 fases, riscos/mitigações (WebView2 vs Playwright.NET para single-file) e estratégia de validação (xUnit + paridade Python↔C# + render offscreen).
+
+## 2026-08-11 — Agenda: card de tarefa compacto
+
+- `agenda_ui.py` (`AgendaTaskRow`): card reduzido para uma linha compacta (~46px) no padrão do `TaskCard` — checkbox + título + meta única ("Alta · Casa"), descrição apenas em tooltip e botão Editar como ícone de 24px (`cardBtn`) que aparece no hover do card (antes: descrição + badges + botão "Editar" em texto, deixando o card alto nas visões Por dia/Mês/Semana).
+- `theme.py`: `#agendaRow[completed="true"] #taskTitle` agora com `text-decoration: line-through` (consistente com Tarefas).
+- Validação offscreen: cards com 46px nos temas claro/escuro, Agenda renderiza em Por dia/Mês/Semana e `import main` OK.
+
+---
+
+## 2026-08-11 — Início: seção "Tecnologia" com as 10 principais notícias de tech
+
+- `scraper.py`: nova fonte de tecnologia **TecnoBlog** (`tecnoblog.net`) com `_fetch_tecnoblog(limit)` — extrai título (`h2`), URL (`a[href]` ignorando o subdomínio `achados.`), categoria (`.catname`), imagem (`data-src` limpa via `_bigger_image`) e data ISO (`time@datetime`); registro em `TECH_SOURCES` separado do `SOURCES` regional + `fetch_tech_news(limit=10)` (o feed de Blumenau não é afetado).
+- `dashboard_ui.py`: nova seção **Tecnologia** no Início, logo abaixo de "Últimas notícias" — cabeçalho com ícone `fa5s.microchip`, status e botão Atualizar; `DashTechWorker` (QThread) busca 15 itens e ordena os 10 mais recentes via `news.sort_by_date`; lista rolável reutilizando `DashNewsRow` (clique abre + marca como visto, ocultas no feed não aparecem).
+- `main.py`: F5 na aba Início (`_refresh_current` row 0) também recarrega `load_tech_news()`.
+- Validação offscreen: `fetch_tech_news` retorna 10 itens com data ISO; dashboard renderiza a seção com 10 linhas nos temas claro/escuro; clique marca visto e persiste em `estado_noticias.json`; `import main` OK.
+- `reminders.py`: novo campo `done_for` (ISO da ocorrência concluída) persistido em `lembretes.txt` (`Finalizado:`), com `current_occurrence()` (diária=hoje, semanal=dia da semana na semana atual, mensal=dia do mês, única=data fixa), `is_done()` e `ReminderManager.mark_done()`; `check_due()` não dispara popup quando a ocorrência atual já está concluída (avança para a próxima; única é desativada). Marcar uma lembrete "única" como feita desativa o alarme; desmarcar reativa (se a data for futura).
+- `reminders_ui.py` (`ReminderCard`): checkbox `#taskCheck` à esquerda em cada lembrete — marcado aplica a cor "concluído" (`[done="true"]`, fundo/borda/verde) e desmarcado volta ao normal; o estado reseta sozinho na próxima recorrência (dia/semana/mês) porque o checkbox reavalia `is_done` a cada refresh contra a data/hora atuais.
+- `theme.py`: estilos `#reminderCard[done="true"]` (fundo `OK_SOFT` + borda `OK`) com título/meta em `OK`.
+- Validação offscreen em `%TEMP%\opencode`: lógica de `current_occurrence`/`is_done` (dia/semana/mês/única, precisão de minuto, reset no dia seguinte), round-trip de persistência, `check_due` não dispara nem repete ocorrência concluída, render dos cards nos temas claro/escuro com checkbox marcado/desmarcado e `import main` OK.
+
+---
+
+## 2026-08-11 — Geração automática de noticias_mes_dia_ano.txt na inicialização
+
+- `scraper.py`: novos `fetch_titles(limit=50)` (títulos únicos de todas as fontes, na ordem em que cada fonte entrega) e `save_daily_titles(limit=50, directory=None)` — grava `noticias_mm_dd_aaaa.txt` com os 50 títulos numerados ao lado do código (dir. padrão = pasta do módulo).
+- `main.py`: novo `DailyTitlesWorker` (QThread) disparado no `__init__` (`_start_daily_titles`) — gera o arquivo em segundo plano a cada inicialização do app, sem travar a UI; sucesso/falha logados em `app.log`.
+- Validação: `import main` OK; `save_daily_titles()` gerou `noticias_08_11_2026.txt` com 50 títulos.
+
+---
+
+## 2026-08-11 — Shimmer: warning do QGradient silenciado
+
+- `common.py` (`ShineEffect.paintEvent`): posições `left`/`mid1` do `QLinearGradient` agora clampeadas em `[0, 1]` (antes só `>= 0`) — o console não exibe mais o warning `QGradient::setColorAt: Color position must be specified in the range 0 to 1` quando o brilho anima acima de `_offset` 1.0. Sem mudança visual. Detalhes em `BUG_FIX.md`.
+
+---
+
+## 2026-08-11 — Notícias: lista compactada
+
+- `news.py` (`NewsView`): espaçamento vertical entre os cards do feed reduzido de 10 para 4 — notícias mais próximas umas das outras, eliminando o espaço em branco excedente.
+- `news.py` (`NewsCard`): vão interno do card removido — miniatura reduzida de 100×74 para 100×60, `minimumHeight` de 96 para 80, margens verticais de 10 para 8 e título com máximo de 34 px; texto passa a preencher a altura da miniatura sem sobrar espaço branco.
+- Validação: cards com 80 px de altura (sizeHint 78) e `import main` OK.
+
+---
+
+## 2026-08-11 — Notícias: limpar a lista carregada
+
+- `news.py` (`NewsView`): novo botão " Limpar" (lixeira, estilo `secondaryBtn`) no cabeçalho, ao lado de "Atualizar" — esvazia a lista de notícias carregadas na aba (feed) e mostra o estado vazio, com status "Lista limpa — Atualizar para recarregar".
+- `news.py`: flag `_cleared` — interrompe um `NewsWorker` em andamento e ignora resultados tardios (`_on_loaded`); `load_news()` (F5/Atualizar) reseta a flag e recarrega normalmente. Estado persistido (salvos/ocultos/vistos) não é alterado.
+- Validação offscreen: limpar zera cards/itens e muda o status; recarregar depois volta ao fluxo normal; `import main` OK.
+
+---
+
 ## 2026-08-10 — Logging básico (app.log)
 
 - `log.py` (novo): logging centralizado com `RotatingFileHandler` (máx. 2 MB, 3 backups) gravando em `app.log` ao lado do código, formato timestamp/nível/módulo. `get_logger()` configura uma vez e devolve loggers filhos de `life_dashboard.*` (herdam o handler).

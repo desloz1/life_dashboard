@@ -1,0 +1,259 @@
+PLANO: MIGRAÇÃO DO ORGANIZADOR PESSOAL (PYTHON/PYSIDE6 -> C#/WPF)
+=================================================================
+
+Data: 2026-08-11
+Status: Aprovado para execução (decisões fixadas na seção "Decisões")
+
+------------------------------------------------------------------
+1. CONTEXTO E OBJETIVO
+------------------------------------------------------------------
+- App atual: 8.467 linhas Python, 23 módulos, PySide6, 8 abas
+  (Início, Notícias, Lembretes, Clima, Tarefas, Agenda, Notas,
+  Compras), bandeja do sistema, notificações, e-mail SMTP, 5 fontes
+  de notícias + preços em 8 lojas (com fallback de navegador),
+  tema claro/escuro/contraste via QSS.
+- Meta: reescrita total em C#/WPF (.NET 8), gerando UM ÚNICO .exe
+  (win-x64, self-contained) que substitui o run.bat, sem depender
+  de Python/pip/PySide6/playwright instalados no sistema.
+- Restrições definidas:
+  - Dados do usuário migram UMA VEZ para %APPDATA%\OrganizadorPessoal.
+  - Os 5 formatos de arquivo atuais são PRESERVADOS (paridade total).
+
+------------------------------------------------------------------
+2. DECISÕES DE ARQUITETURA (fixadas)
+------------------------------------------------------------------
+1. Linguagem/UI: C# + WPF (.NET 8)  (não WinUI 3)
+   Motivo: WPF é mais maduro para exe único self-contained, NotifyIcon
+   (bandeja) trivial, ResourceDictionary espelha bem o QSS, e o
+   empacotamento single-file é bem documentado.
+2. Dados do usuário: %APPDATA%\OrganizadorPessoal com migração
+   automática na primeira execução (lê arquivos ao lado do exe/
+   workspace e copia para %APPDATA%). Corrige o design atual de
+   gravar no diretório do programa.
+3. Formatos de dados: manter 100% iguais aos atuais
+   (lembretes.txt, tarefas.txt, notas.json, compras.json,
+   estado_noticias.json) para preservar dados e permitir comparar
+   versões durante a migração.
+
+------------------------------------------------------------------
+3. MAPEAMENTO DE DEPENDÊNCIAS PYTHON -> .NET
+------------------------------------------------------------------
+  Python                              | .NET / WPF
+  ------------------------------------|------------------------------------
+  PySide6 widgets                     | Controles WPF (XAML + Styles/
+                                      |   DataTriggers) — seletores QSS
+                                      |   [seen="true"]/[overdue="true"]
+                                      |   viram DataTrigger em Styles
+  theme.py (QSS, 1096 linhas)         | ResourceDictionary (Dark.xaml,
+                                      |   Light.xaml, HighContrast.xaml)
+                                      |   + ThemeService; fonte escala
+                                      |   via recursos DynamicResource
+  qtawesome (fa5s.*)                  | FontAwesome.Sharp (NuGet, FA5)
+  QGraphicsDropShadowEffect           | DropShadowEffect nativo do WPF
+  requests                            | HttpClient
+  lxml + XPath                        | HtmlAgilityPack
+  playwright (fallback anti-bot)      | WebView2 (recomendado) ou
+                                      |   Playwright.NET (risco com
+                                      |   single-file — ver seção 8)
+  keyring (Cred. Manager do Windows)  | CredentialManager (NuGet) ou DPAPI
+  winsound.Beep                       | Console.Beep (mesmo API Windows)
+  QThread / Signal                    | async/await + Task.Run +
+                                      |   IProgress<T> + Dispatcher
+  QSystemTrayIcon                     | System.Windows.Forms.NotifyIcon
+  smtplib                             | MailKit (TLS/STARTTLS robusto)
+  QSettings (registro)                | SettingsService (JSON em
+                                      |   %APPDATA%) + leitura única do
+                                      |   registro para migrar
+  log.py (RotatingFileHandler)        | NLog (ou logger próprio) —
+                                      |   mesmo formato de linha, 2 MB x 3
+  QPainter (TaskWeekChart, TempChart, | Controles custom OnRender /
+  Shimmer, calendário)                |   DrawingVisual
+
+------------------------------------------------------------------
+4. ESTRUTURA DO PROJETO C#
+------------------------------------------------------------------
+src/
+  OrganizadorPessoal.sln
+  OrganizadorPessoal/                  (WPF, net8.0-windows)
+    App.xaml / App.xaml.cs
+    MainWindow.xaml(.cs)               sidebar + stack + bandeja +
+                                       agendador + atalhos
+    Views/                             Dashboard, News, Reminders,
+                                       Weather, Tasks, Agenda, Notes,
+                                       Compras + GlobalSearchDialog
+    Controls/                          NewsCard, FeaturedCard, TaskCard,
+                                       ReminderCard, ProductCard,
+                                       NoteCard, AgendaTaskRow,
+                                       HourCard, TaskWeekChart, TempChart,
+                                       Shimmer, CalendarGrid,
+                                       NotificationWindow
+    Dialogs/                           TaskDialog, AddProductDialog,
+                                       PreferencesDialog, SMTPDialog
+    Models/                            Reminder, Task, Note, Product,
+                                       NewsItem, Weather*, Holiday
+    Services/                          ReminderManager, TaskManager,
+                                       NoteManager, PriceTracker,
+                                       NewsScraper, PriceScraper,
+                                       WeatherService, HolidayService,
+                                       NotificationService, EmailService,
+                                       SettingsService, MigrationService,
+                                       NewsState, ImageCache, IconService,
+                                       ThemeService
+    Theme/                             Dark.xaml, Light.xaml,
+                                       HighContrast.xaml, Styles.xaml
+    Converters/                        prioridade->cor, bool->visibilidade,
+                                       etc.
+  OrganizadorPessoal.Tests/            (xUnit)
+publish.ps1                            (single-file publish)
+
+------------------------------------------------------------------
+5. CAMADA DE DADOS — PARIDADE TOTAL
+------------------------------------------------------------------
+Portar para C# mantendo formato byte a byte (testes de round-trip
+com os arquivos reais do workspace como fixtures):
+
+- lembretes.txt — blocos ID:/Título:/Descrição:/Recorrência:/Horário:/
+  Data:/Dias:/Dia do mês:/Ativo:/Soneca:/Finalizado:. Portar:
+  compute_next_trigger, current_occurrence, is_done, snooze,
+  mark_done (única desativa ao concluir), check_due, search.
+
+- tarefas.txt — blocos id:/título:/... + formato pipe legado
+  (aceitar os dois). Portar: next_occurrence (recorrência com clamp
+  de fim de mês), toggle (cria próxima ocorrência), overdue_tasks,
+  mark_overdue_notified, completed_last_days, streak_days,
+  category_stats, search.
+
+- notas.json — inclui pasta anexos/ (copiar). Portar markdown_to_html
+  (converter para FlowDocument ou Markdig.Wpf; ver seção 8),
+  ordenação fixados -> prioridade -> atualização.
+
+- compras.json — Product + PriceTracker; portar normalize_price
+  (17 casos de teste) e histórico de preços.
+
+- estado_noticias.json — {saved, hidden, seen} com limites atuais
+  (saved <= 100, seen <= 200).
+
+------------------------------------------------------------------
+6. CAMADA DE UI — MAPEAMENTO POR ABA
+------------------------------------------------------------------
+- Shell (main.py) -> MainWindow: sidebar 60 px com 8 botões FA5,
+  Ctrl+1..8 / F5 / Ctrl+F / Ctrl+N / zoom Ctrl+=-0, fade de troca de
+  aba (150 ms), janela maximizada, tema, bandeja, agendadores
+  (15 s alarmes / 30 min preços), shutdown limpo no closeEvent.
+
+- Tarefas -> TasksView + TaskCard (checkbox, badges prioridade/
+  categoria/prazo, hover com ações, recorrência, barra de progresso,
+  filtros pills, ordenação).
+
+- Lembretes -> RemindersView + ReminderCard (ícone por tipo, meta
+  única, soneca 5/15/30, checkbox de conclusão por ocorrência).
+
+- Agenda -> AgendaView (Por dia/Mês/Semana) + feriados nacionais
+  (HolidayService com algoritmo de Páscoa), CalendarGrid custom.
+
+- Notícias -> NewsView (Feed/Salvos/Ocultos, filtro por fonte, busca,
+  Ctrl+S/Ctrl+H, barra desfazer, estado persistido), NewsCard/
+  FeaturedCard com thumbnail (ImageCache com SHA1 + TTL 24 h).
+
+- Clima -> WeatherService (Open-Meteo, códigos WMO) + WeatherView
+  (cards atuais, faixa 24 h, TempChart).
+
+- Início -> DashboardView (saudação, relógio ao vivo, cards resumo
+  clicáveis, TaskWeekChart, streak, % por categoria, DashNews/
+  DashTech).
+
+- Notas -> NotesView (lista + preview renderizado + editor), anexos
+  com chips/thumbs, exportar .md/.txt.
+
+- Compras -> ComprasView + ProductCard (hit verde, tooltip histórico)
+  + AddProductDialog (lookup async) + PriceScraper.
+
+- Busca global -> GlobalSearchDialog (Ctrl+F), 4 fontes agregadas,
+  navegação por teclado.
+
+------------------------------------------------------------------
+7. FASES DE IMPLEMENTAÇÃO
+------------------------------------------------------------------
+Fase 0 — Fundação:
+  solution .NET 8, App + MainWindow vazios, NLog, SettingsService
+  (JSON + leitura do registro QSettings
+  HKCU\Software\OrganizadorPessoal\LifeDashboard), MigrationService
+  (copia dados + anexos/ + cache/images/ -> %APPDATA%, senha SMTP via
+  Credential Manager), pipeline de publish single-file.
+
+Fase 1 — Dados (sem UI):
+  Models + Managers + HolidayService + WeatherService +
+  normalize_price + conversor Markdown. Testes xUnit com fixtures
+  = arquivos reais.
+
+Fase 2 — Infra de UI:
+  ResourceDictionaries dos 3 temas, IconService, sombras, shimmer,
+  ImageCache, converters.
+
+Fase 3 — Abas simples:
+  Tarefas -> Lembretes -> Agenda (validação de render offscreen).
+
+Fase 4 — Notícias + Clima:
+  scrapers + estado + views.
+
+Fase 5 — Início + Notas + Compras:
+  dashboard, notas/anexos, price tracker + fallback de navegador.
+
+Fase 6 — Integração:
+  bandeja, notificações/popups/sons, e-mail, agendadores, atalhos,
+  busca global, preferências, geração noticias_mm_dd_aaaa.txt no boot.
+
+Fase 7 — Empacotamento:
+  publish single-file, smoke test no workspace, troca do run.bat e
+  do atalho Iniciar Organizador.lnk pelo exe.
+
+------------------------------------------------------------------
+8. RISCOS E MITIGAÇÕES
+------------------------------------------------------------------
+1. Playwright.NET x single-file: o driver node não se funde bem no
+   exe único. DECISÃO NA FASE 5:
+     (a) WebView2 (embutido no Win11/Edge; usa JS para extrair preço
+         após renderizar anti-bot) -> RECOMENDADO para exe único;
+     (b) Playwright.NET -> paridade total, mas exige desempacotar o
+         driver na 1a execução.
+   Manter requests + HtmlAgilityPack como camada primária e o
+   navegador só no fallback.
+
+2. Fidelidade visual QSS -> WPF: estilos QSS não têm seletor de
+   propriedade; resolver com DataTrigger. Validar card a card por
+   pixel nos 2 temas (padrão atual).
+
+3. FontAwesome: embutir fonte FA5 (licença OFL, livre) e mapear os
+   ~40 nomes fa5s.* usados.
+
+4. Registro QSettings: leitura única e idempotente; nunca regravar.
+
+5. Perda de dados na migração: copiar antes de gravar; nunca apagar
+   os arquivos originais.
+
+6. Esforço: reescrita total ~8,5 k LOC Python -> estimativa realista
+   de 3 a 6 semanas de trabalho focado, fase a fase, mantendo o app
+   Python funcionando até a Fase 6 (coexistência).
+
+------------------------------------------------------------------
+9. VALIDAÇÃO
+------------------------------------------------------------------
+- xUnit para toda lógica pura (parsers dos dois formatos,
+  recorrências, streak, feriados, normalize_price, markdown) —
+  fixtures são cópias dos arquivos reais.
+- Paridade Python <-> C#: script em %TEMP%\opencode que roda os 5
+  managers das duas versões sobre os mesmos dados e difere
+  resultados/arquivos gravados.
+- Render offscreen: harness WPF (STA + Dispatcher) instanciando cada
+  View com dados de fixture, nos 3 temas.
+- Smoke: dotnet build + execução do exe publicado (padrão AGENTS.md).
+
+------------------------------------------------------------------
+10. PONTOS EM ABERTO (decidir durante a execução)
+------------------------------------------------------------------
+- Fallback anti-bot das Compras: WebView2 (recomendado) vs
+  Playwright.NET.
+- Preview de Markdown das Notas: converter para FlowDocument (sem
+  dependência) vs WebView2.
+- Nome do exe e se o atalho Iniciar Organizador.lnk passará a
+  apontar para OrganizadorPessoal.exe.

@@ -64,6 +64,7 @@ class TaskDialog(QDialog):
         self.date_edit = QDateEdit()
         self.date_edit.setCalendarPopup(True)
         self.date_edit.setDisplayFormat("dd/MM/yyyy")
+        self.date_edit.setDate(QDate.currentDate())
         form.addRow(self.no_date_check, self.date_edit)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)

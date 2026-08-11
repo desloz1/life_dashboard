@@ -1,0 +1,182 @@
+PLANO: ORGANIZADOR PESSOAL RODANDO 24H/DIA EM SERVIDOR NA NUVEM
+=================================================================
+
+Data: 2026-08-11
+Status: Aprovado (decisões fixadas na seção 2)
+
+------------------------------------------------------------------
+1. CONTEXTO E OBJETIVO
+------------------------------------------------------------------
+- App atual: Organizador Pessoal (Python 3 + PySide6), 8 abas, roda
+  apenas no PC local. Quando o PC está desligado, lembretes, alertas
+  de tarefas atrasadas e quedas de preço NÃO disparam.
+- Meta: executar a lógica do app 24h/dia num servidor na nuvem para
+  que alarmes e notificações aconteçam mesmo com o PC desligado.
+- Canal de notificação no servidor: E-MAIL SMTP (sem bandeja, sem som,
+  sem popup — recursos de GUI não existem em servidor headless).
+
+------------------------------------------------------------------
+2. DECISÕES FIXADAS
+------------------------------------------------------------------
+1. Ambiente: VPS LINUX (Ubuntu 24.04), rodando via serviço systemd.
+   - Provedores recomendados (o usuário ainda não tem servidor):
+     * HETZNER CX22 (Recommended) ~3,79 EUR/mês
+       2 vCPU / 4 GB RAM / 40 GB SSD; melhor custo/estabilidade.
+     * Oracle Cloud Free Tier: 0 EUR/mês (Arm Ampere A1, até 4 OCPU/
+       24 GB); cadastro com cartão; o tier "Always Free" pode ser negado.
+     * DigitalOcean/Vultr ~US$5-6/mês (1 vCPU/1 GB).
+     * AWS Lightsail ~US$5/mês.
+   - O daemon é leve: 1 vCPU/1 GB basta; 4 GB é confortável.
+2. Formato de execução: serviço do sistema (systemd) — NÃO Docker.
+   Motivo: app pessoal, operação mais simples; Docker adiciona camada
+   sem ganho real. (Restart=always reinicia o serviço sozinho.)
+3. Dados: SERVIDOR É A ÚNICA FONTE.
+   - O PC local é o editor (UI). O usuário envia os arquivos de dados
+     ao servidor (git privado ou script de deploy) e o servidor só
+     dispara notificações com o que recebeu.
+4. Coleta de preços: CHROMIUM HEADLESS no servidor.
+   - Lojas anti-bot (Amazon, Pichau, Casas Bahia, Terabyte etc.) que
+     bloqueiam `requests` usam o fallback de navegador já existente.
+5. Arquitetura: NOVO DAEMON HEADLESS (service.py) que reusa os módulos
+   puros do app. Nenhuma mudança na UI local.
+
+------------------------------------------------------------------
+3. POR QUE UM DAEMON HEADLESS (e não o app completo)
+------------------------------------------------------------------
+- Os módulos de negócio NÃO importam PySide6 (rodam sem display):
+    reminders.py, tasks.py, compras.py, weather.py, scraper.py,
+    scraper_compras.py, notes.py.
+- Só main.py e os *_ui.py dependem de GUI (bandeja, popup, som,
+  QSS) — inúteis num servidor headless.
+- O daemon reusa os módulos puros + QCoreApplication (timers/QSettings
+  sem precisar de display) e envia notificações por e-mail.
+- A deduplicação de alertas já existe nos dados:
+    reminders.done_for / tasks.overdue_notified / products.drop_notified
+  (1 alerta por dia por item — não repete a cada tick).
+
+------------------------------------------------------------------
+4. PONTOS CRÍTICOS QUE O PLANO TRATA
+------------------------------------------------------------------
+1. FUSO HORÁRIO (crítico!)
+   - O código usa datetime.now() local em todo o calendário. Servidor
+     em UTC dispararia lembretes 3h adiantado.
+   - Solução: serviço roda com TZ=America/Sao_Paulo
+     (timedatectl set-timezone America/Sao_Paulo OU Environment= no unit).
+2. NAVEGADOR HEADLESS
+   - scraper_compras.BrowserSession usa channel="chrome" (só existe no
+     Windows) e headless=False.
+   - Solução: parametrizar via variável de ambiente SCRAPER_HEADLESS=1;
+     no Linux, chromium.launch() sem channel + `playwright install chromium`.
+3. CONFIG SMTP NO LINUX
+   - preferences.py usa QSettings (via QCoreApplication vira
+     ~/.config/OrganizadorPessoal/LifeDashboard.conf) e keyring.
+   - keyring em servidor headless costuma falhar; o fallback já existente
+     (smtp_pass gravado no QSettings) cobre.
+   - Solução: CLI `python service.py --set-smtp` grava server/porta/
+     user/senha/remetente/destinatário.
+4. DUPLICIDADE DE NOTIFICAÇÃO
+   - Se o app local continuar rodando, PC e servidor disparam juntos.
+   - Recomendado: usar o servidor como único emissor de alarmes; no PC
+     local, desligar sons/bandeja (ou apenas ignorar popups locais).
+5. BACKUP DO SERVIDOR (opcional)
+   - app.log já é rotativo. Sugerir tar diário do diretório de dados.
+
+------------------------------------------------------------------
+5. FASES DE IMPLEMENTAÇÃO
+------------------------------------------------------------------
+FASE 1 — Daemon headless (service.py)
+  - Loop a cada 15s: reminder_manager.check_due() + tasks overdue +
+    price drops -> envia e-mail SMTP (reusa notify.send_email_notification).
+  - Loop a cada 30min: atualiza preços em thread (lógica do PriceWorker).
+  - Ao iniciar: gera noticias_mm_dd_aaaa.txt (scraper.save_daily_titles).
+  - Logging em app.log (log.py existente).
+  - CLI:
+      python service.py --check       -> dispara e-mail de teste e lista
+                                          próximo disparo agendado
+      python service.py --set-smtp    -> grava configuração SMTP
+  - SEM dependência de main.py.
+
+FASE 2 — Headless Chromium
+  - Parametrizar BrowserSession (scraper_compras.py):
+    * variável de ambiente SCRAPER_HEADLESS -> headless=True/False
+    * channel="chrome" só no Windows; no Linux launch() sem channel
+      (navegador instalado via playwright).
+  - Manter o comportamento atual no PC local (janela visível).
+
+FASE 3 — Deploy (local -> servidor)
+  - Script deploy.ps1 (Windows local) que envia via scp:
+      * código (módulos .py, requirements.txt)
+      * dados: lembretes.txt, tarefas.txt, notas.json, compras.json,
+        estado_noticias.json
+    e reinicia o serviço systemd.
+  - EXCLUIR do deploy: cache/, anexos/, app.log, __pycache__/,
+    noticias_*.txt, PLANO_*.txt, DONE.txt/BUG_FIX.md.
+  - Alternativa: repositório git privado (push do PC, pull no servidor).
+
+FASE 4 — Provisionamento + serviço systemd (guia passo a passo)
+  - Passos do servidor:
+      1. Criar VPS (Hetzner CX22, Ubuntu 24.04)
+      2. sudo timedatectl set-timezone America/Sao_Paulo
+      3. Instalar Python 3.12 + venv
+      4. pip install -r requirements.txt
+      5. playwright install chromium --with-deps
+      6. Copiar código + dados para /opt/life_dashboard
+      7. Criar usuário dedicado (ex.: lifeapp) e rodar o serviço com ele
+      8. python service.py --set-smtp (configurar SMTP)
+      9. python service.py --check (testar e-mail)
+  - Unit systemd: /etc/systemd/system/life-dashboard.service
+      [Unit]
+      Description=Life Dashboard daemon
+      After=network-online.target
+      [Service]
+      User=lifeapp
+      WorkingDirectory=/opt/life_dashboard
+      ExecStart=/opt/life_dashboard/.venv/bin/python service.py
+      Restart=always
+      RestartSec=5
+      Environment=SCRAPER_HEADLESS=1
+      Environment=TZ=America/Sao_Paulo
+      [Install]
+      WantedBy=multi-user.target
+  - Validação:
+      systemctl daemon-reload && systemctl enable --now life-dashboard
+      systemctl status life-dashboard
+      journalctl -u life-dashboard -f
+      Teste real: agendar um lembrete para daqui a 2 min e conferir o e-mail.
+
+FASE 5 — Documentação de operação
+  - Como atualizar dados do servidor (deploy.ps1 / git push)
+  - Como ver logs (journalctl / app.log)
+  - Como trocar senha SMTP (service.py --set-smtp)
+  - Como reiniciar o serviço (systemctl restart life-dashboard)
+
+------------------------------------------------------------------
+6. VERIFICAÇÃO / TESTES DE REGRESSÃO
+------------------------------------------------------------------
+- Não há suíte de testes no repo (padrão AGENTS.md): testes em
+  %TEMP%\opencode com python -u -X utf8.
+- Validações previstas:
+  * import service OK.
+  * service.py --check com now injetado (tempo artificial) dispara
+    e-mail e lista o próximo disparo correto.
+  * E-mail de teste REAL entregue.
+  * BrowserSession headless no Linux baixa/abre o Chromium e coleta
+    preço de loja anti-bot.
+  * Fuso: lembrete agendado dispara na hora certa (TZ=America/Sao_Paulo).
+  * Sem mudança de comportamento na UI local (import main OK).
+
+------------------------------------------------------------------
+7. ARQUIVOS NOVOS/MODIFICADOS
+------------------------------------------------------------------
+NOVOS:
+  service.py            - daemon headless + CLI (Fase 1)
+  deploy.ps1            - envio local -> servidor (Fase 3)
+  life-dashboard.service- template do unit systemd (Fase 4)
+  PLANO_SERVIDOR_24H.txt- este plano
+
+MODIFICADOS:
+  scraper_compras.py    - BrowserSession headless/plataforma (Fase 2)
+  requirements.txt      - nada novo (playwright já está listado)
+
+SEM MUDANÇA:
+  main.py, *_ui.py, módulos puros de negócio (reuso direto).

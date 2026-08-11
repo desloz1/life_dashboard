@@ -1,0 +1,190 @@
+PLANO: INTEGRAÇÃO GMAIL VIA GOOGLE API (FOCO EM SEGURANÇA)
+=================================================================
+
+Data: 2026-08-11
+Status: Aprovado (decisões fixadas na seção 2)
+
+------------------------------------------------------------------
+1. CONTEXTO E OBJETIVO
+------------------------------------------------------------------
+- App atual: Organizador Pessoal (Python 3 + PySide6), 9 abas, dados
+  locais (tarefas, lembretes, notas, compras, notícias, clima, webcams).
+- Meta: integrar o Gmail via Google API com:
+  * Ler a caixa de entrada (nova aba com lista de e-mails recentes e
+    leitura da mensagem com HTML seguro);
+  * Buscar e-mails (por termos/remetente);
+  * Notificar novos e-mails (popup + som, 1x por message-id);
+  * Enviar e-mails pelo Gmail (gmail.send);
+  * Migrar o envio de notificações de lembrete do SMTP para a API Gmail
+    (SMTP existente vira fallback/legado).
+- Preocupação central: SEGURANÇA — OAuth 2.0, menor privilégio, tokens
+  protegidos no keyring, sem exposição de credenciais.
+
+------------------------------------------------------------------
+2. DECISÕES FIXADAS
+------------------------------------------------------------------
+1. Autenticação: OAuth 2.0 para "aplicativo de desktop"
+   (InstalledAppFlow do google_auth_oauthlib) com PKCE automático.
+   SEM senha de app, SEM App Password.
+2. Escopos (menor privilégio): apenas
+   - https://www.googleapis.com/auth/gmail.readonly (ler)
+   - https://www.googleapis.com/auth/gmail.send (enviar)
+   SEM gmail.modify, gmail.labels, gmail.settings.
+   Estado de "lido" é LOCAL (estado_gmail.json), nunca alterado no
+   servidor (evita precisar de escopo modify).
+3. Armazenamento de tokens: APENAS no keyring do SO
+   (serviço "OrganizadorPessoal"), seguindo o padrão já usado para a
+   senha SMTP em preferences.py:
+   - refresh_token      -> usuario "gmail_refresh"
+   - client_id          -> usuario "gmail_client_id"
+   - client_secret      -> usuario "gmail_client_secret"
+   Access token (curto, ~1h) vive só em memória.
+   NUNCA gravar tokens em QSettings ou em arquivos do repositório.
+   Se o keyring estiver indisponível, a autenticação é NEGADA (sem
+   downgrade de segurança).
+4. TLS: verificação de certificado SEMPRE LIGADA para Google.
+   PROIBIDO replicar o padrão verify=False usado no scraping de
+   notícias/compras para os endpoints do Google.
+5. Fluxo OAuth: servidor local de auth somente em localhost/loopback
+   (host="localhost", porta alta aleatória), prompt="consent",
+   PKCE via google_auth_oauthlib (client_type=installed_app).
+6. Rotação de refresh token: a cada refresh(), se o Google devolver um
+   novo refresh token, re-persistir no keyring imediatamente.
+7. Revogação: botão "Revogar acesso" chama POST em
+   https://oauth2.googleapis.com/revoke e limpa os tokens do keyring.
+8. client_secret.json fora do versionamento (.gitignore novo) e, após o
+   primeiro login, as credenciais são espelhadas no keyring — refrescar
+   funciona mesmo se o arquivo não existir mais em runtime.
+9. Notificação de e-mail novo: timer a cada 5 minutos; popup + som
+   respeitando NOTIFY_TRAY/NOTIFY_SOUND; 1x por message-id, persistido
+   em estado_gmail.json (padrão de overdue_notified/drop_notified).
+10. HTML de e-mails: sanitizado (remove script/style/iframe/object) e
+    com BLOQUEIO de recursos remotos no QTextBrowser (override de
+    loadResource) — imagem de tracking não carrega, evitando vazamento
+    de IP para o remetente.
+11. Logs auditados: nenhum token/logar informação sensível em app.log.
+12. Envio de notificação de lembrete: canal escolhido nas Preferências
+    (Gmail API por padrão quando configurado; SMTP como fallback/legado).
+13. Auth fica NA PRÓPRIA ABA Gmail (cabeçalho): botões "Conectar Gmail"
+    quando desautenticado e "Revogar acesso" quando autenticado.
+
+------------------------------------------------------------------
+3. SETUP NO GOOGLE CLOUD (manual, pelo usuário)
+------------------------------------------------------------------
+1. console.cloud.google.com -> criar projeto -> habilitar Gmail API.
+2. OAuth consent screen (External) -> adicionar o próprio e-mail como
+   test user -> declarar os escopos gmail.readonly e gmail.send.
+3. Credentials -> Criar credenciais -> OAuth client ID -> tipo
+   "Desktop app" -> baixar client_secret.json para a pasta do projeto.
+4. TRADE-OFF (decisão do usuário):
+   - Em modo "Testing" o refresh token expira em 7 DIAS; o app então
+     detecta 401/refresco inválido e pede reconexão de forma clara.
+     RECOMENDADO para uso pessoal (publicar exige verificação da
+     Google, pesado para app pessoal).
+   - Alternativa sem expiração: conta Google Workspace com app
+     "Internal" (só funciona se o usuário tiver Workspace).
+
+------------------------------------------------------------------
+4. ARQUIVOS NOVOS
+------------------------------------------------------------------
+- gmail_auth.py (puro, sem Qt):
+    GmailAuthManager
+      - run_auth_flow(client_secret_path, scopes): InstalledAppFlow com
+        run_local_server(host="localhost"), prompt="consent", PKCE.
+      - get_credentials(): Credentials com refresh sob demanda; re-persiste
+        refresh token rotacionado no keyring; retorna None se não configurado.
+      - revoke(): POST oauth2.googleapis.com/revoke + purge no keyring.
+      - is_configured(): verifica tokens no keyring.
+- gmail_client.py (puro, sem Qt):
+    Wrapper do googleapiclient.discovery.build("gmail", "v1")
+      - list_messages(query, max_results): [{id, sender, subject, snippet,
+        date, unread}] via messages.list + messages.get (metadata).
+      - get_full_message(id): corpo text/plain + text/html, cabeçalhos.
+      - search(query, max_results): reusa list_messages com query.
+      - send_message(to, subject, body): mime via email.message.EmailMessage.
+      - sanitize_html(html): remove script/style/iframe/object e recursos
+        remotos; retorna HTML seguro para o QTextBrowser.
+      - Timeouts em todas as chamadas; HttpError 401/403 -> sinal
+        "re-autenticar".
+- gmail_ui.py (Qt):
+    GmailView: cabeçalho (status + e-mail da conta + botões Conectar Gmail/
+    Revogar acesso, Atualizar, Nova mensagem), campo de busca, lista rolável
+    de MailCard, painel leitor MailReader (QTextBrowser com loadResource
+    bloqueando rede).
+    MailCard: avatar-ícone, remetente, assunto, trecho, hora relativa,
+    badge de não lido.
+    ComposeDialog: Para / Assunto / Corpo (envio via worker).
+    GmailWorker e GmailSendWorker (QThread, padrão NewsWorker/PriceWorker).
+    set_active()/shutdown().
+- .gitignore (novo): client_secret.json e qualquer arquivo de token.
+- estado_gmail.json (novo): message-ids notificados + estado de leitura
+  local (padrão de estado_noticias.json).
+
+------------------------------------------------------------------
+5. MUDANÇAS EM ARQUIVOS EXISTENTES
+------------------------------------------------------------------
+- main.py:
+    - Nova entrada no sidebar "Gmail" (fa5s.envelope, row 9, 10a entrada).
+    - Atalho Ctrl+G (Ctrl+1..9 já ocupados).
+    - _switch_view/_refresh_lists/F5 (row 9) -> gmail_view.
+    - _gmail_timer (5 min) -> _check_gmail(): novos e-mails -> popup+som
+      1x/id; marca em estado_gmail.json.
+    - _send_reminder_email migrado: canal Gmail API se configurado, senão
+      SMTP existente (fallback).
+    - closeEvent -> gmail_view.shutdown().
+- preferences.py:
+    - Seletor de canal de envio (Gmail API / SMTP) para notificações de
+      lembrete. SMTP permanece como legado/fallback.
+- theme.py:
+    - Estilos #mailCard (+[unread="true"]), #mailBadge, #mailTitle,
+      #mailMeta, #mailSnippet, #mailReader; mailCard em SHADOW_OBJECT_NAMES.
+- requirements.txt:
+    - google-api-python-client
+    - google-auth-oauthlib
+    - google-auth-httplib2
+    (keyring >= 24.0 já presente)
+
+------------------------------------------------------------------
+6. CHECKLIST DE SEGURANÇA (critério de aceite)
+------------------------------------------------------------------
+1. Refresh token SOMENTE no keyring; access token em memória; rotação
+   de refresh token persistida.
+2. Escopos mínimos (readonly + send); sem modify/settings.
+3. PKCE + servidor de auth restrito a localhost (loopback).
+4. TLS com verificação obrigatória para Google (sem verify=False).
+5. client_secret.json fora do git; credenciais espelhadas no keyring
+   (refresco funciona sem o arquivo em runtime).
+6. Logs auditados: nenhum token em app.log.
+7. Revogação limpa os tokens do keyring.
+8. HTML sanitizado + bloqueio de recursos remotos no leitor (anti
+   tracking-pixel).
+9. 401/403 -> prompt claro de reconexão; timeouts e quota tratados em
+   silêncio.
+10. .gitignore cobre client_secret.json e arquivos de token.
+
+------------------------------------------------------------------
+7. FASES DE EXECUÇÃO
+------------------------------------------------------------------
+1. Google Cloud (usuário): projeto + Gmail API + consent + download do
+   client_secret.json. BLOQUEIA os testes ao vivo.
+2. gmail_auth.py + testes com keyring fake (backend em memória): fluxo
+   mockado, round-trip de token, rotação, revoke.
+3. gmail_client.py + testes: sanitize_html (script/iframe/remote-img),
+   parsing de payloads Gmail sintéticos, send_message com mime.
+4. gmail_ui.py + theme.py: render da lista/leitor/compôs nos temas
+   claro/escuro.
+5. main.py + preferences.py: aba, Ctrl+G, F5, timer de novos e-mails,
+   migração do envio de notificação.
+6. Passada de segurança (checklist seção 6) + .gitignore + sweep de
+   validação offscreen em %TEMP%\opencode (import main OK, render,
+   notificação 1x/id).
+7. Registro em DONE.txt (e BUG_FIX.md se algo for corrigido no caminho).
+
+------------------------------------------------------------------
+8. VALIDAÇÃO (padrão do AGENTS.md)
+------------------------------------------------------------------
+- Sem suíte de testes no repo; testes de regressão via scripts temporários
+  em %TEMP%\opencode com: python -u -X utf8
+- Antes de finalizar: python -X utf8 -c "import sys; sys.path.insert(0,
+  r'<cwd>'); import main"
+- Teste ao vivo de OAuth exige consentimento real do usuário (a fase 1).

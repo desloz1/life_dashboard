@@ -103,7 +103,7 @@ HIGH_CONTRAST = False
 THUMB_WIDTH = 130
 THUMB_HEIGHT = 90
 
-SHADOW_OBJECT_NAMES = ("sidebar", "newsCard", "featuredCard", "reminderCard", "weatherCard", "dayCard", "dashCard", "dashStats", "taskCard", "noteCard", "prodCard")
+SHADOW_OBJECT_NAMES = ("sidebar", "newsCard", "featuredCard", "reminderCard", "weatherCard", "dayCard", "dashCard", "dashStats", "taskCard", "noteCard", "prodCard", "webcamCard")
 
 
 def apply_theme(app, name):
@@ -345,6 +345,17 @@ def apply_stylesheet(app):
             background: {DANGER_SOFT};
             border: 1px solid {DANGER};
         }}
+        #reminderCard[done="true"] {{
+            background: {OK_SOFT};
+            border: 1px solid {OK};
+        }}
+        #reminderCard[done="true"] #reminderTitle {{
+            color: {OK};
+            text-decoration: line-through;
+        }}
+        #reminderCard[done="true"] #reminderMeta {{
+            color: {OK};
+        }}
         #notifPopup {{
             background: {SURFACE};
             border: 1px solid {BORDER};
@@ -557,6 +568,53 @@ def apply_stylesheet(app):
             border: 1px solid {BORDER_HOVER};
             background: {CARD_HOVER};
         }}
+        #webcamCard {{
+            background: {CARD};
+            border: 1px solid {BORDER};
+            border-radius: 12px;
+        }}
+        #webcamCard:hover {{
+            border: 1px solid {BORDER_HOVER};
+            background: {CARD_HOVER};
+        }}
+        #webcamCard[state="live"] {{
+            border: 1px solid {OK};
+        }}
+        #webcamCard[state="offline"] {{
+            border: 1px solid {BORDER};
+        }}
+        #webcamIcon {{
+            min-width: 20px;
+        }}
+        #webcamName {{
+            font-size: 15px;
+            font-weight: 700;
+            color: {TEXT};
+        }}
+        #webcamLoc {{
+            font-size: 12px;
+            color: {MUTED};
+        }}
+        #webcamState {{
+            font-size: 11px;
+            font-weight: 800;
+            border-radius: 6px;
+            padding: 2px 8px;
+        }}
+        #webcamState[state="live"] {{ background: {OK_SOFT}; color: {OK}; }}
+        #webcamState[state="offline"] {{ background: {DANGER_SOFT}; color: {DANGER}; }}
+        #webcamState[state="loading"] {{ background: {ACCENT_SOFT}; color: {ACCENT}; }}
+        #webcamVideoArea {{
+            background: #000000;
+            border-radius: 10px;
+        }}
+        #webcamPoster {{
+            background: #000000;
+            border-radius: 10px;
+        }}
+        #webcamVideo {{
+            background: #000000;
+        }}
         #prodCard[hit="true"] {{
             background: {OK_SOFT};
             border: 1px solid {OK};
@@ -698,7 +756,7 @@ def apply_stylesheet(app):
             background: {PAUSED_BG};
             border: 1px solid {PAUSED_BORDER};
         }}
-        #agendaRow[completed="true"] #taskTitle {{ color: {MUTED}; }}
+        #agendaRow[completed="true"] #taskTitle {{ color: {MUTED}; text-decoration: line-through; }}
         #holidayRow {{
             background: {WARN_SOFT};
             border: 1px solid {WARN};

@@ -1,0 +1,4 @@
+2026-08-11 16:58:35 [WARNING] life_dashboard.dashboard: Falha ao buscar notícias de tecnologia: 403 Client Error: Forbidden for url: https://tecnoblog.net/
+2026-08-11 16:58:40 [INFO] life_dashboard.main: Notícias do dia geradas em C:\WORK\GITHUB\life_dashboard\noticias_08_11_2026.txt
+2026-08-11 16:58:57 [WARNING] life_dashboard.dashboard: Falha ao buscar notícias de tecnologia: 403 Client Error: Forbidden for url: https://tecnoblog.net/
+2026-08-11 16:59:48 [WARNING] life_dashboard.dashboard: Falha ao buscar notícias de tecnologia: 403 Client Error: Forbidden for url: https://tecnoblog.net/

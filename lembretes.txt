@@ -3,12 +3,47 @@
 # Recorrência: única, diária, semanal ou mensal.
 # Dias (para semanal): Seg, Ter, Qua, Qui, Sex, Sáb, Dom.
 # Ativo: sim ou não.
-ID: ccdee74946204f02a5c7ed4f758585a2
-Título: Teste
-Descrição: Teste
-Recorrência: única
-Horário: 00:00
-Data: 11/08/2026
+# Finalizado: ISO da ocorrência concluída (vazio = pendente).
+ID: 795057761e50462cb15776f3dce3fa15
+Título: Financeiro
+Descrição: 
+Recorrência: diária
+Horário: 17:00
+Data: 
 Dias: 
 Dia do mês: 1
 Ativo: sim
+Finalizado: 
+
+ID: fe2f7cd31dd54d8ba279a4b934f64473
+Título: Verificar geladeira
+Descrição: 
+Recorrência: diária
+Horário: 17:00
+Data: 
+Dias: 
+Dia do mês: 1
+Ativo: sim
+Finalizado: 
+
+ID: 83573e05db2d4023af7d1387877cfd29
+Título: Financeiro
+Descrição: 
+Recorrência: diária
+Horário: 17:00
+Data: 
+Dias: 
+Dia do mês: 1
+Ativo: sim
+Finalizado: 
+
+ID: 217a8f3402c04cbcbedb13dc65d0f7e7
+Título: Regar plantas
+Descrição: 
+Recorrência: semanal
+Horário: 00:00
+Data: 
+Dias: Seg
+Dia do mês: 1
+Ativo: sim
+Finalizado: 

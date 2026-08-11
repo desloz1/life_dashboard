@@ -186,13 +186,16 @@ class ReminderCard(QFrame):
     delete_requested = Signal(str)
     toggle_requested = Signal(str)
     snooze_requested = Signal(str, int)
+    done_requested = Signal(str, bool)
 
     def __init__(self, reminder, parent=None):
         super().__init__(parent)
         self.setObjectName("reminderCard")
         if not reminder.enabled:
             self.setProperty("paused", True)
-        if rem.is_overdue(reminder):
+        if rem.is_done(reminder):
+            self.setProperty("done", True)
+        elif rem.is_overdue(reminder):
             self.setProperty("overdue", True)
         self.style().unpolish(self)
         self.style().polish(self)
@@ -201,6 +204,14 @@ class ReminderCard(QFrame):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(10, 8, 10, 8)
         layout.setSpacing(10)
+
+        self.checkbox = QCheckBox()
+        self.checkbox.setObjectName("taskCheck")
+        self.checkbox.setChecked(rem.is_done(reminder))
+        self.checkbox.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.checkbox.setToolTip("Concluído nesta recorrência")
+        self.checkbox.toggled.connect(lambda checked: self.done_requested.emit(reminder.id, checked))
+        layout.addWidget(self.checkbox)
 
         icon_name, icon_color = TYPE_STYLE.get(reminder.trigger_type, TYPE_STYLE["one_time"])
         icon_label = QLabel()
@@ -376,6 +387,7 @@ class RemindersView(QWidget):
             card.delete_requested.connect(self._delete_reminder)
             card.toggle_requested.connect(self._toggle_reminder)
             card.snooze_requested.connect(self._snooze_reminder)
+            card.done_requested.connect(self._toggle_done)
             self.list_layout.insertWidget(self.list_layout.count() - 1, card)
 
         if not self.manager.reminders:
@@ -440,4 +452,8 @@ class RemindersView(QWidget):
 
     def _snooze_reminder(self, reminder_id, minutes):
         self.manager.snooze(reminder_id, minutes)
+        self.refresh()
+
+    def _toggle_done(self, reminder_id, checked):
+        self.manager.mark_done(reminder_id, checked)
         self.refresh()

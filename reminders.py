@@ -49,6 +49,7 @@ class Reminder:
     enabled: bool = True
     next_trigger: str = ""
     snooze_until: str = ""
+    done_for: str = ""
 
 
 def compute_next_trigger(reminder, now=None):
@@ -143,6 +144,47 @@ def is_overdue(reminder, now=None):
         return False
 
 
+def current_occurrence(reminder, now=None):
+    """Data/hora da ocorrência atual do lembrete — a que o checkbox representa."""
+    now = (now or datetime.now()).replace(second=0, microsecond=0)
+    hour, minute = (int(x) for x in reminder.time.split(":"))
+
+    if reminder.trigger_type == "one_time":
+        if not reminder.date:
+            return None
+        return datetime.strptime(reminder.date, "%Y-%m-%d").replace(hour=hour, minute=minute)
+
+    if reminder.trigger_type == "daily":
+        return now.replace(hour=hour, minute=minute)
+
+    if reminder.trigger_type == "weekly":
+        if not reminder.weekdays:
+            return None
+        today = now.date()
+        week_start = today - timedelta(days=today.weekday())
+        candidates = [week_start + timedelta(days=d) for d in reminder.weekdays]
+        past = [c for c in candidates if c <= today]
+        chosen = max(past) if past else min(candidates)
+        return datetime(chosen.year, chosen.month, chosen.day, hour, minute)
+
+    if reminder.trigger_type == "monthly":
+        last_day = calendar.monthrange(now.year, now.month)[1]
+        day = min(reminder.day_of_month, last_day)
+        return datetime(now.year, now.month, day, hour, minute)
+
+    return None
+
+
+def is_done(reminder, now=None):
+    """Verdadeiro quando a ocorrência atual já foi marcada como concluída."""
+    if not reminder.done_for:
+        return False
+    current = current_occurrence(reminder, now)
+    if current is None:
+        return False
+    return reminder.done_for == current.isoformat()
+
+
 def _type_to_pt(trigger_type):
     return TYPE_TO_PT.get(trigger_type, trigger_type)
 
@@ -191,7 +233,8 @@ def serialize_reminder(reminder):
         f"Data: {_date_to_pt(reminder.date)}\n"
         f"Dias: {weekdays}\n"
         f"Dia do mês: {reminder.day_of_month}\n"
-        f"Ativo: {'sim' if reminder.enabled else 'não'}"
+        f"Ativo: {'sim' if reminder.enabled else 'não'}\n"
+        f"Finalizado: {reminder.done_for}"
         f"{snooze}"
     )
 
@@ -231,6 +274,7 @@ def parse_reminder(block_lines):
         day_of_month=day_of_month,
         enabled=enabled,
         snooze_until=data.get("soneca", "").strip(),
+        done_for=data.get("finalizado", "").strip(),
     )
 
 
@@ -284,6 +328,7 @@ class ReminderManager:
             "# Recorrência: única, diária, semanal ou mensal.",
             "# Dias (para semanal): Seg, Ter, Qua, Qui, Sex, Sáb, Dom.",
             "# Ativo: sim ou não.",
+            "# Finalizado: ISO da ocorrência concluída (vazio = pendente).",
         ]
         for index, reminder in enumerate(self.reminders):
             if index:
@@ -351,6 +396,30 @@ class ReminderManager:
                 return True
         return False
 
+    def mark_done(self, reminder_id, done, now=None):
+        """Marca a ocorrência atual como concluída (ou reabre) para um lembrete."""
+        now = (now or datetime.now()).replace(second=0, microsecond=0)
+        for reminder in self.reminders:
+            if reminder.id != reminder_id:
+                continue
+            if done:
+                current = current_occurrence(reminder, now)
+                if current is None:
+                    return
+                reminder.done_for = current.isoformat()
+                if reminder.trigger_type == "one_time":
+                    reminder.enabled = False
+                    reminder.next_trigger = ""
+                    reminder.snooze_until = ""
+            else:
+                reminder.done_for = ""
+                if reminder.trigger_type == "one_time":
+                    reminder.enabled = True
+                    next_trigger = compute_next_trigger(reminder, now)
+                    reminder.next_trigger = next_trigger.isoformat() if next_trigger else ""
+            self.save()
+            return
+
     def search(self, query):
         q = (query or "").strip().lower()
         if not q:
@@ -367,6 +436,16 @@ class ReminderManager:
             if is_snoozed(reminder, now):
                 continue
             if datetime.fromisoformat(reminder.next_trigger) <= now:
+                if is_done(reminder, now):
+                    changed = True
+                    reminder.snooze_until = ""
+                    if reminder.trigger_type == "one_time":
+                        reminder.enabled = False
+                        reminder.next_trigger = ""
+                    else:
+                        next_trigger = compute_next_trigger(reminder, now)
+                        reminder.next_trigger = next_trigger.isoformat() if next_trigger else ""
+                    continue
                 fired.append(reminder)
                 changed = True
                 reminder.snooze_until = ""

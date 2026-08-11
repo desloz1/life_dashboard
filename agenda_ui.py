@@ -3,7 +3,7 @@ import datetime
 
 import qtawesome as qta
 from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QCursor
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QStackedWidget,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -64,7 +65,7 @@ class AgendaTaskRow(QFrame):
         common.make_shadow(self, y=2, blur=12)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(12, 8, 12, 8)
+        layout.setContentsMargins(10, 6, 10, 6)
         layout.setSpacing(10)
 
         self.checkbox = QCheckBox()
@@ -78,45 +79,39 @@ class AgendaTaskRow(QFrame):
         text_col.setSpacing(2)
         self.title = QLabel(task.title)
         self.title.setObjectName("taskTitle")
+        self.title.setToolTip(task.description or task.title)
         text_col.addWidget(self.title)
-        if task.description:
-            desc = QLabel(task.description)
-            desc.setObjectName("taskMeta")
-            desc.setWordWrap(True)
-            text_col.addWidget(desc)
 
-        badges = QHBoxLayout()
-        badges.setSpacing(6)
+        meta_parts = []
         if task.priority:
-            prio = QLabel(PRIORITY_NAMES.get(task.priority, task.priority))
-            prio.setObjectName("prioBadge")
-            prio.setProperty("level", task.priority)
-            prio.style().unpolish(prio)
-            prio.style().polish(prio)
-            badges.addWidget(prio)
+            meta_parts.append(PRIORITY_NAMES.get(task.priority, task.priority))
         if task.category:
-            cat = QLabel(task.category)
-            cat.setObjectName("catBadge")
-            badges.addWidget(cat)
-        badges.addStretch()
-        text_col.addLayout(badges)
-        text_col.addStretch()
+            meta_parts.append(task.category)
+        if meta_parts:
+            meta = QLabel(" · ".join(meta_parts))
+            meta.setObjectName("taskMeta")
+            text_col.addWidget(meta)
         layout.addLayout(text_col, 1)
 
-        edit_btn = QPushButton(" Editar")
-        edit_btn.setObjectName("secondaryBtn")
-        edit_btn.setIcon(qta.icon("fa5s.pen", color=theme.TEXT))
-        edit_btn.setIconSize(QSize(13, 13))
-        edit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        edit_btn.clicked.connect(lambda: self.edit_requested.emit(task.id))
-        layout.addWidget(edit_btn)
+        self.edit_btn = QToolButton()
+        self.edit_btn.setObjectName("cardBtn")
+        self.edit_btn.setIcon(qta.icon("fa5s.pen", color=theme.MUTED))
+        self.edit_btn.setIconSize(QSize(14, 14))
+        self.edit_btn.setFixedSize(24, 24)
+        self.edit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.edit_btn.setToolTip("Editar")
+        self.edit_btn.clicked.connect(lambda: self.edit_requested.emit(task.id))
+        self.edit_btn.setVisible(False)
+        layout.addWidget(self.edit_btn)
 
-        self._apply_completed_style()
+    def enterEvent(self, event):
+        self.edit_btn.setVisible(True)
+        super().enterEvent(event)
 
-    def _apply_completed_style(self):
-        font = QFont(self.title.font())
-        font.setStrikeOut(self.task.completed)
-        self.title.setFont(font)
+    def leaveEvent(self, event):
+        if not self.rect().contains(self.mapFromGlobal(QCursor.pos())):
+            self.edit_btn.setVisible(False)
+        super().leaveEvent(event)
 
 
 class AgendaHolidayRow(QFrame):

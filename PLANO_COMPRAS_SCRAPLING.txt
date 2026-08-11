@@ -1,0 +1,110 @@
+PLANO — Migração do engine de webscraping de Compras para Scrapling
+====================================================================
+
+Data: 2026-08-11
+Escopo: `scraper_compras.py` (engine de coleta de preço/nome/loja).
+Fora do escopo nesta fase: `compras.py`, `compras_ui.py` (sem mudanças de
+contrato; a API `fetch_product(url, timeout, session)` é mantida).
+
+--------------------------------------------------------------------
+
+1. DIAGNÓSTICO DO ESTADO ATUAL
+   - `scraper_compras.py` usa `requests` + `lxml` (headers manuais) e, quando a
+     loja bloqueia, cai para `BrowserSession` (playwright, Chrome do sistema
+     com JANELA VISÍVEL).
+   - Lojas suportadas: Amazon, Mercado Livre, Casas Bahia, Americanas, Kabum,
+     Pichau, Terabyte. Magazine Luiza está em `UNSUPPORTED_STORES` (bloqueada
+     até por navegador real — anti-bot proprietário).
+   - Parsing em cascata: JSON-LD (`application/ld+json`) -> Open Graph
+     (`og:title`, `og:price:amount`, `product:price:amount`) -> `<title>` ->
+     seletor por loja (Amazon `.a-offscreen`, Mercado Livre
+     `.andes-money-amount__fraction` + `__cents`).
+   - `compras_ui.py` (LookupWorker/PriceWorker) cria `BrowserSession` na própria
+     QThread e chama `fetch_product(url, session=...)` — contrato estável.
+   - Ambiente: Python 3.12.0 (compatível com Scrapling, que exige 3.10+).
+
+2. DECISÕES APROVADAS
+   - Migrar DE VEZ para Scrapling (sem fallback para `requests`).
+   - Tentar desbloquear Magazine Luiza via `StealthySession`.
+   - Manter a interface pública de `scraper_compras.py` (zero mudança na UI).
+
+3. DEPENDÊNCIAS
+   - `requirements.txt`: adicionar `scrapling[fetchers]`.
+     - Traz `curl_cffi` (motor do `Fetcher`), `patchright` (motor do
+       `StealthyFetcher`/`StealthySession`) e `playwright` (motor do
+       `DynamicFetcher`/`DynamicSession`); `lxml` já é usado pelo Scrapling.
+     - Avaliar a permanência de `requests` no arquivo: outros módulos
+       (`scraper.py` de notícias, `weather.py`, `common.py`) continuam
+       dependendo dele — manter `requests` no requirements.
+   - Setup único (documentar no DONE.txt):
+     `pip install "scrapling[fetchers]"`
+     `scrapling install`   (baixa navegadores; `--force` para reinstalar)
+   - Mitigação de download grande: `real_chrome=True` nos fetchers de
+     navegador para reaproveitar o Chrome já instalado.
+
+4. NOVO ENGINE — `scraper_compras.py` (API compatível)
+   - Manter símbolos existentes: `STORES`, `store_name`, `normalize_price`,
+     `_to_float`, `BlockedError`, `MIN_HTML_LEN` e a assinatura de
+     `fetch_product(url, timeout=..., session=None)`.
+   - Remover import/uso de `requests` e de `BrowserSession`/playwright direto.
+   - Estratégia em cascata (substitui requests + BrowserSession):
+     1) `Fetcher` (HTTP estático) com impersonação de TLS:
+        `impersonate="chrome"`, `stealthy_headers=True`, seguindo o padrão
+        `Fetcher.get(url, ...)` que retorna `Response` (body bytes).
+        Camada mais rápida; resolve Kabum e lojas leves sem abrir navegador.
+     2) `DynamicSession` (Playwright) para páginas com JS:
+        espera por `network_idle` (sem sleeps fixos); reaproveita Chrome
+        instalado. Acionado quando a camada 1 não renderiza o preço.
+     3) `StealthySession` (patchright) para anti-bot pesado:
+        `headless=True`, `solve_cloudflare=True`, `real_chrome=True`; sem
+        janela piscando (melhoria de UX vs. headed atual). Acionado quando a
+        camada 2 é detectada como desafio (padrões Cloudflare/robot check).
+   - `ScraplingSession` (novo) substitui `BrowserSession` com a MESMA
+     interface: init preguiçoso, `fetch(url)` -> conteúdo, `close()` seguro,
+     criado na mesma thread que o usa (cada worker cria o seu) e reutilizado
+     entre os produtos de uma batelada.
+
+5. PARSING ADAPTATIVO
+   - Trocar `lxml.html` por `Selector` do Scrapling (`.css` / `.xpath` /
+     regex-text), mantendo a cascata JSON-LD -> OG -> title -> seletor da loja.
+   - Habilitar `adaptive=True` nos seletores por loja: se a loja mudar o HTML,
+     os seletores se reancoram automaticamente (fim de quebra por redesign).
+   - Reforço de robustez do preço: fallback genérico por padrão monetário
+     (elementos com "R$"/vírgula) quando o seletor específico não achar.
+   - `normalize_price` permanece como está (regressão de testes já existentes).
+
+6. EXPANSÃO DE LOJAS
+   - Magazine Luiza: testar com `StealthySession`. Se resolver, remover de
+     `UNSUPPORTED_STORES`; se ainda bloquear, manter a mensagem clara
+     ("Magazine Luiza bloqueia acesso automatizado (anti-bot)") como fallback.
+   - Revalidar Amazon e Mercado Livre com a nova stack; ajustar seletores se
+     necessário.
+
+7. CONFIABILIDADE
+   - Espera por `network_idle` em vez de sleeps fixos.
+   - Retry único + resolutor Cloudflare habilitado para padrões de desafio.
+   - Pequeno intervalo entre produtos na batelada (ser amigável com as lojas).
+   - Falha por produto não derruba os demais (padrão atual do `PriceWorker`).
+
+8. VALIDAÇÃO (offscreen em %TEMP%\opencode + ao vivo)
+   - Regressão de `normalize_price` (17 casos existentes).
+   - Detecção de loja (`store_name`) e `_store_entry`.
+   - Parse de HTML sintético: JSON-LD, Open Graph e seletor por loja.
+   - Ao vivo por camada: Kabum via `Fetcher` (sem navegador); Amazon e
+     Magazine Luiza via `StealthySession` (headless).
+   - Batelada com `ScraplingSession` reutilizada (múltiplos produtos).
+   - `import scraper_compras` e `import main` OK (comandos do AGENTS.md).
+
+9. REGISTRO
+   - Adicionar bloco no TOPO de `DONE.txt` (data 2026-08-11) com o resumo da
+     migração por área (dependências, engine, parsing, lojas, validação).
+   - Se surgir defeito durante a migração, registrar causa+solução em
+     `BUG_FIX.md`.
+
+10. RISCOS E MITIGAÇÕES
+    - `scrapling install` baixa navegadores (centenas de MB): mitigado com
+      `real_chrome=True` no uso diário.
+    - Magalu pode continuar bloqueando (anti-bot proprietário): manter
+      `UNSUPPORTED_STORES` como garantia se o stealth não resolver.
+    - `StealthySession` usa `patchright` (binários próprios): validar a
+      combinação com Chrome instalado antes de fechar a fase.

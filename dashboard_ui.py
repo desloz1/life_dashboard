@@ -109,6 +109,26 @@ class DashNewsWorker(QThread):
             self.finished_ok.emit(items)
 
 
+class DashTechWorker(QThread):
+    finished_ok = Signal(list)
+    failed = Signal(str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+    def run(self):
+        try:
+            raw = scraper.fetch_tech_news(limit=15)
+        except Exception as exc:
+            logger.warning("Falha ao buscar notícias de tecnologia: %s", exc)
+            if not self.isInterruptionRequested():
+                self.failed.emit(str(exc))
+            return
+        items = news.sort_by_date(raw, limit=10)
+        if not self.isInterruptionRequested():
+            self.finished_ok.emit(items)
+
+
 class DashNewsRow(QFrame):
     clicked = Signal(str)
 
@@ -223,6 +243,8 @@ class DashboardView(QWidget):
         self._weather_worker = None
         self._news_worker = None
         self._news_items = []
+        self._tech_worker = None
+        self._tech_items = []
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -374,8 +396,43 @@ class DashboardView(QWidget):
         self.news_scroll.setWidgetResizable(True)
         self.news_scroll.setObjectName("scrollArea")
         self.news_scroll.setWidget(self.news_list_host)
-        self.news_scroll.setMaximumHeight(540)
+        self.news_scroll.setMaximumHeight(320)
         root.addWidget(self.news_scroll)
+
+        tech_header = QHBoxLayout()
+        tech_header.setSpacing(8)
+        tech_icon = QLabel()
+        tech_icon.setPixmap(qta.icon("fa5s.microchip", color=theme.ACCENT).pixmap(18, 18))
+        tech_header.addWidget(tech_icon)
+        tech_title = QLabel("Tecnologia")
+        tech_title.setObjectName("dashNewsHeader")
+        tech_header.addWidget(tech_title)
+        tech_header.addStretch()
+        self.tech_status = QLabel("")
+        self.tech_status.setObjectName("status")
+        tech_header.addWidget(self.tech_status)
+        self.tech_refresh = QPushButton()
+        self.tech_refresh.setObjectName("cardBtn")
+        self.tech_refresh.setIcon(qta.icon("fa5s.sync-alt", color=theme.MUTED))
+        self.tech_refresh.setIconSize(QSize(16, 16))
+        self.tech_refresh.setFixedSize(30, 30)
+        self.tech_refresh.setToolTip("Atualizar notícias de tecnologia")
+        self.tech_refresh.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.tech_refresh.clicked.connect(self.load_tech_news)
+        tech_header.addWidget(self.tech_refresh)
+        root.addLayout(tech_header)
+
+        self._tech_rows = {}
+        self.tech_list_host = QWidget()
+        self.tech_list_layout = QVBoxLayout(self.tech_list_host)
+        self.tech_list_layout.setContentsMargins(0, 0, 4, 0)
+        self.tech_list_layout.setSpacing(8)
+        self.tech_scroll = QScrollArea()
+        self.tech_scroll.setWidgetResizable(True)
+        self.tech_scroll.setObjectName("scrollArea")
+        self.tech_scroll.setWidget(self.tech_list_host)
+        self.tech_scroll.setMaximumHeight(320)
+        root.addWidget(self.tech_scroll)
 
         root.addStretch()
 
@@ -392,6 +449,7 @@ class DashboardView(QWidget):
         self.refresh()
         self.load_weather()
         self.load_news()
+        self.load_tech_news()
 
     def _update_clock(self):
         now = datetime.datetime.now()
@@ -573,6 +631,68 @@ class DashboardView(QWidget):
     def _on_news_finished(self):
         self.news_refresh.setEnabled(True)
 
+    def load_tech_news(self):
+        if self._tech_worker and self._tech_worker.isRunning():
+            return
+        self.tech_status.setText("Carregando…")
+        self.tech_refresh.setEnabled(False)
+        self._clear_tech()
+        for _ in range(3):
+            sk = common.SkeletonShimmer()
+            sk.setObjectName("newsCard")
+            sk.setFixedHeight(40)
+            self.tech_list_layout.addWidget(sk)
+        self._tech_worker = DashTechWorker(self)
+        self._tech_worker.finished_ok.connect(self._on_tech_loaded)
+        self._tech_worker.failed.connect(self._on_tech_failed)
+        self._tech_worker.finished.connect(self._on_tech_finished)
+        self._tech_worker.start()
+
+    def _clear_tech(self):
+        self._tech_rows = {}
+        while self.tech_list_layout.count():
+            item = self.tech_list_layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+
+    def _on_tech_loaded(self, items):
+        common.remove_shimmers(self.tech_list_layout)
+        self._tech_items = items
+        self._render_tech()
+
+    def _on_tech_failed(self, error):
+        common.remove_shimmers(self.tech_list_layout)
+        self.tech_status.setText("Falha ao carregar")
+        label = QLabel(f"Não foi possível carregar as notícias de tecnologia.\n{error}")
+        label.setObjectName("errorLabel")
+        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.tech_list_layout.addWidget(label)
+
+    def _on_tech_finished(self):
+        self.tech_refresh.setEnabled(True)
+
+    def _render_tech(self):
+        state = news._load_state()
+        hidden_urls = {entry["url"] for entry in state["hidden"]}
+        seen_urls = set(state["seen"])
+        self._clear_tech()
+        shown = [item for item in self._tech_items if item["url"] not in hidden_urls]
+        if not shown:
+            label = QLabel("Nenhuma notícia de tecnologia disponível.")
+            label.setObjectName("emptyLabel")
+            label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.tech_list_layout.addWidget(label)
+            self.tech_status.setText("")
+            return
+        for item in shown:
+            row = DashNewsRow(item)
+            row.clicked.connect(self._open_news)
+            row.set_seen(item["url"] in seen_urls)
+            self._tech_rows[item["url"]] = row
+            self.tech_list_layout.addWidget(row)
+        self.tech_status.setText(f"{len(shown)} notícias")
+
     def _render_news(self):
         state = news._load_state()
         hidden_urls = {entry["url"] for entry in state["hidden"]}
@@ -599,7 +719,7 @@ class DashboardView(QWidget):
         if url not in state["seen"]:
             state["seen"] = state["seen"] + [url]
             news._save_state(state)
-        row = self._news_rows.get(url)
+        row = self._news_rows.get(url) or self._tech_rows.get(url)
         if row is not None:
             row.set_seen(True)
         QDesktopServices.openUrl(QUrl(url))
@@ -615,3 +735,8 @@ class DashboardView(QWidget):
             if not self._news_worker.wait(2500):
                 self._news_worker.terminate()
                 self._news_worker.wait()
+        if self._tech_worker and self._tech_worker.isRunning():
+            self._tech_worker.requestInterruption()
+            if not self._tech_worker.wait(2500):
+                self._tech_worker.terminate()
+                self._tech_worker.wait()

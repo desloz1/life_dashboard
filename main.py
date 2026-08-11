@@ -2,7 +2,16 @@ import datetime
 import sys
 
 import qtawesome as qta
-from PySide6.QtCore import QEasingCurve, QPropertyAnimation, QSettings, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import (
+    QEasingCurve,
+    QPropertyAnimation,
+    QSettings,
+    QSize,
+    Qt,
+    QThread,
+    QTimer,
+    Signal,
+)
 from PySide6.QtGui import QColor, QIcon, QKeySequence, QPainter, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
@@ -21,10 +30,12 @@ from PySide6.QtWidgets import (
 )
 
 import compras as compras_mod
+import log
 import notify
 import notes as notes_mod
 import preferences
 import reminders as rem
+import scraper
 import search_ui
 import tasks as tasks_mod
 import theme
@@ -36,10 +47,29 @@ from notes_ui import NotesView
 from reminders_ui import RemindersView
 from tasks_ui import TasksView
 from weather_ui import WeatherView
+from webcams_ui import WebcamsView
+
+logger = log.get_logger("life_dashboard.main")
 
 
 def _as_bool(value):
     return value in (True, "true", "1", "True", 1)
+
+
+class DailyTitlesWorker(QThread):
+    """Gera noticias_mes_dia_ano.txt (50 títulos) em segundo plano ao iniciar."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.result_path = None
+        self.error = None
+
+    def run(self):
+        try:
+            self.result_path = scraper.save_daily_titles(limit=50)
+        except Exception as exc:
+            self.error = exc
+            logger.warning("Falha ao gerar noticias_mes_dia_ano.txt: %s", exc)
 
 
 class Sidebar(QWidget):
@@ -124,6 +154,7 @@ class MainWindow(QMainWindow):
             ("Agenda", "fa5s.calendar-alt", True),
             ("Notas", "fa5s.sticky-note", True),
             ("Compras", "fa5s.shopping-cart", True),
+            ("Webcams", "fa5s.video", True),
         )
 
         self.theme_btn = QToolButton()
@@ -187,6 +218,7 @@ class MainWindow(QMainWindow):
         self.weather_view = WeatherView()
         self.notes_view = NotesView(self.notes_manager)
         self.compras_view = ComprasView(self.price_tracker)
+        self.webcams_view = WebcamsView()
         self.stack_layout.addWidget(self.dashboard_view)
         self.stack_layout.addWidget(self.news_view)
         self.stack_layout.addWidget(self.reminders_view)
@@ -195,6 +227,7 @@ class MainWindow(QMainWindow):
         self.stack_layout.addWidget(self.agenda_view)
         self.stack_layout.addWidget(self.notes_view)
         self.stack_layout.addWidget(self.compras_view)
+        self.stack_layout.addWidget(self.webcams_view)
         self.dashboard_view.hide()
         self.reminders_view.hide()
         self.weather_view.hide()
@@ -202,6 +235,7 @@ class MainWindow(QMainWindow):
         self.agenda_view.hide()
         self.notes_view.hide()
         self.compras_view.hide()
+        self.webcams_view.hide()
 
         self._fade_effect = None
         self._fade_anim = None
@@ -222,6 +256,18 @@ class MainWindow(QMainWindow):
         self._setup_tray()
         self._setup_scheduler()
         self._setup_shortcuts()
+        self._start_daily_titles()
+
+    def _start_daily_titles(self):
+        self._titles_worker = DailyTitlesWorker(self)
+        self._titles_worker.finished.connect(self._on_titles_done)
+        self._titles_worker.start()
+
+    def _on_titles_done(self):
+        if self._titles_worker.error:
+            logger.warning("Arquivo noticias_mes_dia_ano.txt não foi gerado: %s", self._titles_worker.error)
+        elif self._titles_worker.result_path:
+            logger.info("Notícias do dia geradas em %s", self._titles_worker.result_path)
 
     def _update_theme_btn(self):
         if theme.CURRENT_THEME == "dark":
@@ -252,9 +298,10 @@ class MainWindow(QMainWindow):
         self.agenda_view.refresh()
         self.notes_view.refresh()
         self.compras_view.refresh()
+        self.webcams_view.refresh()
 
     def _setup_shortcuts(self):
-        for index in range(1, 9):
+        for index in range(1, 10):
             QShortcut(QKeySequence(f"Ctrl+{index}"), self,
                       activated=lambda i=index: self.sidebar.setCurrentRow(i - 1))
         QShortcut(QKeySequence("F5"), self, activated=self._refresh_current)
@@ -270,6 +317,7 @@ class MainWindow(QMainWindow):
         if row == 0:
             self.dashboard_view.refresh()
             self.dashboard_view.load_news()
+            self.dashboard_view.load_tech_news()
         elif row == 1:
             self.news_view.load_news()
         elif row == 3:
@@ -280,6 +328,8 @@ class MainWindow(QMainWindow):
             self.notes_view.refresh()
         elif row == 7:
             self.compras_view._refresh_prices()
+        elif row == 8:
+            self.webcams_view.load_webcams()
 
     def _search_edit_for_row(self, row):
         return {
@@ -510,6 +560,7 @@ class MainWindow(QMainWindow):
         self.news_view.shutdown()
         self.weather_view.shutdown()
         self.compras_view.shutdown()
+        self.webcams_view.shutdown()
         super().closeEvent(event)
 
     def _switch_view(self, row):
@@ -521,6 +572,8 @@ class MainWindow(QMainWindow):
         self.agenda_view.setVisible(row == 5)
         self.notes_view.setVisible(row == 6)
         self.compras_view.setVisible(row == 7)
+        self.webcams_view.setVisible(row == 8)
+        self.webcams_view.set_active(row == 8)
         if row == 0:
             self.dashboard_view.refresh()
         elif row == 1:

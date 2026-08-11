@@ -1,5 +1,19 @@
 ---
 
+## 2026-08-11 — Aba Compras: "NameError: name 'QCursor' is not defined" no leaveEvent
+
+- **Causa**: `compras_ui.py:309` (`ProductCard.leaveEvent`) usava `QCursor.pos()` mas o import do arquivo só trazia `QDesktopServices` de `PySide6.QtGui` — `QCursor` nunca foi importado. O `leaveEvent` (override de `QFrame`) disparava o traceback ao mover o mouse para fora de um card.
+- **Solução**: `compras_ui.py` — adicionado `QCursor` ao import de `PySide6.QtGui`. Validado com `import compras_ui` OK.
+
+---
+
+## 2026-08-11 — Warning "QGradient::setColorAt: Color position must be specified in the range 0 to 1" no console
+
+- **Causa**: `common.py` (`ShineEffect.paintEvent`) — o brilho de shimmer anima `_offset` de 0 a 1.5 (`_anim.setEndValue(1.5)`); as posições `left` (`pos - 0.15`) e `mid1` (`pos - 0.02`) só eram clampeadas em `>= 0` (`max`), então com `_offset > 1.0` passavam de 1 e o Qt emitia o warning (ignorando a cor). Não era erro nem quebrava a UI — só poluía o console.
+- **Solução**: `common.py` — `left` e `mid1` agora também clampeadas a 1.0 (`min(1.0, max(0.0, ...))`), mesmas restrições já aplicadas a `mid2`/`right`. Validado: `import common` OK e `setColorAt` acima de 1 já não é chamado.
+
+---
+
 ## 2026-08-10 — App não abria: lembrete "única" sem data quebrava o `describe_schedule`
 
 - **Causa**: um lembrete com `Recorrência: única` e `Data:` vazia fazia `reminders.py` (`describe_schedule`) quebrar com `ValueError: time data '' does not match format '%Y-%m-%d'` na montagem do `ReminderCard` — a inicialização da janela falhava logo em `RemindersView`. O `compute_next_trigger` já tratava `not reminder.date`, mas o `describe_schedule` não.
