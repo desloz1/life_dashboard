@@ -197,9 +197,52 @@ class AddProductDialog(QDialog):
         return getattr(self, "_result", None)
 
 
+class TargetDialog(QDialog):
+    def __init__(self, product, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Editar preço alvo")
+        self.setMinimumWidth(380)
+        self._result = None
+
+        form = QFormLayout(self)
+        name = QLabel(product.nome)
+        name.setObjectName("prodMeta")
+        name.setWordWrap(True)
+        form.addRow("Produto:", name)
+        self.target_edit = QLineEdit()
+        self.target_edit.setText(format_price(product.preco_alvo) if product.preco_alvo else "")
+        self.target_edit.setPlaceholderText("ex.: 150,00 (vazio = sem alvo)")
+        self.target_edit.selectAll()
+        form.addRow("Preço alvo:", self.target_edit)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self._on_accept)
+        buttons.rejected.connect(self.reject)
+        form.addRow(buttons)
+
+    def _on_accept(self):
+        text = self.target_edit.text().strip()
+        if not text:
+            self._result = 0.0
+            self.accept()
+            return
+        alvo = scraper_compras.normalize_price(text)
+        if alvo is None:
+            QMessageBox.warning(self, "Compras", "Informe um valor de preço alvo válido (ex.: 150,00).")
+            return
+        self._result = alvo
+        self.accept()
+
+    def result_value(self):
+        return self._result
+
+
 class ProductCard(QFrame):
     open_requested = Signal(str)
     delete_requested = Signal(str)
+    target_edit_requested = Signal(str)
 
     def __init__(self, product, parent=None):
         super().__init__(parent)
@@ -280,6 +323,14 @@ class ProductCard(QFrame):
         open_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         open_btn.setToolTip("Abrir na loja")
         open_btn.clicked.connect(lambda: self.open_requested.emit(product.url))
+        target_btn = QToolButton()
+        target_btn.setObjectName("cardBtn")
+        target_btn.setIcon(qta.icon("fa5s.edit", color=theme.ACCENT))
+        target_btn.setIconSize(QSize(14, 14))
+        target_btn.setFixedSize(24, 24)
+        target_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        target_btn.setToolTip("Editar preço alvo")
+        target_btn.clicked.connect(lambda: self.target_edit_requested.emit(product.id))
         delete_btn = QToolButton()
         delete_btn.setObjectName("cardBtn")
         delete_btn.setIcon(qta.icon("fa5s.trash-alt", color=theme.DANGER))
@@ -289,6 +340,7 @@ class ProductCard(QFrame):
         delete_btn.setToolTip("Remover")
         delete_btn.clicked.connect(lambda: self.delete_requested.emit(product.id))
         action_layout.addWidget(open_btn)
+        action_layout.addWidget(target_btn)
         action_layout.addWidget(delete_btn)
         actions.setVisible(False)
         layout.addWidget(actions)
@@ -392,6 +444,7 @@ class ComprasView(QWidget):
             card = ProductCard(product)
             card.open_requested.connect(self._open_link)
             card.delete_requested.connect(self._remove)
+            card.target_edit_requested.connect(self._edit_target)
             self.list_layout.insertWidget(self.list_layout.count() - 1, card)
 
         total = len(self.manager.products)
@@ -483,6 +536,15 @@ class ComprasView(QWidget):
             self.status.setText(msg + " — lojas com anti-bot podem não responder.")
         else:
             self.status.setText(f"{ok} atualizado{'s' if ok != 1 else ''}")
+
+    def _edit_target(self, product_id):
+        product = self.manager.get(product_id)
+        if product is None:
+            return
+        dialog = TargetDialog(product, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.manager.set_target(product_id, dialog.result_value())
+            self.refresh()
 
     def _open_link(self, url):
         QDesktopServices.openUrl(QUrl(url))

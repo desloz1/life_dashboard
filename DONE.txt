@@ -5,6 +5,15 @@ adicionadas ao topo desta lista, com data, em cada sessão de trabalho.
 
 ---
 
+## 2026-08-11 — Compras: editar o valor alvo de cada produto
+
+- `compras_ui.py` (`ProductCard`): novo botão de lápis (`fa5s.edit`, `cardBtn`) no hover do card, entre "Abrir na loja" e "Remover" — emite `target_edit_requested` e permite alterar o preço alvo de cada produto individualmente.
+- `compras_ui.py` (`TargetDialog`): diálogo simples (nome do produto + campo "Preço alvo" pré-preenchido com o valor atual) — aceita valor vazio (= sem alvo) e valida o formato via `scraper_compras.normalize_price`.
+- `compras_ui.py` (`ComprasView._edit_target`): abre o diálogo e aplica via `PriceTracker.set_target` (já persistia em `compras.json`), atualizando o card (texto do alvo e destaque verde quando o preço atual ≤ novo alvo).
+- Validação offscreen em `%TEMP%\opencode`: diálogo aceita/recusa valores (válido, vazio, inválido), `set_target` persiste e recalcula `drop_hit`, card renderiza nos temas claro/escuro; `import compras_ui` e `import main` OK.
+
+---
+
 ## 2026-08-11 — Migração do engine de compras para Scrapling
 
 - **Ambiente**: instalado Python 3.12.10 (per-usuário, `%LocalAppData%\Programs\Python\Python312`) — o runtime antigo do app era Python 3.9.5 (`C:\PYTHON`), incompatível com o Scrapling (exige 3.10+). `run.bat` agora prioriza a instalação por usuário 3.12+ antes do `python.exe` do PATH e exige Python >= 3.10 (antes >= 3.9); checagem de dependências inclui `scrapling`.
