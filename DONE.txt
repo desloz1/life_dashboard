@@ -5,6 +5,20 @@ adicionadas ao topo desta lista, com data, em cada sessão de trabalho.
 
 ---
 
+## 2026-08-11 — Migração do engine de compras para Scrapling
+
+- **Ambiente**: instalado Python 3.12.10 (per-usuário, `%LocalAppData%\Programs\Python\Python312`) — o runtime antigo do app era Python 3.9.5 (`C:\PYTHON`), incompatível com o Scrapling (exige 3.10+). `run.bat` agora prioriza a instalação por usuário 3.12+ antes do `python.exe` do PATH e exige Python >= 3.10 (antes >= 3.9); checagem de dependências inclui `scrapling`.
+- **Dependências**: `requirements.txt` — removido `playwright>=1.40` (não usado diretamente mais) e adicionado `scrapling[fetchers]>=0.4` (traz `curl_cffi`, `patchright` e `playwright` como motores); `requests`/`lxml` mantidos (outros módulos ainda dependem). Setup: `pip install "scrapling[fetchers]"` + `scrapling install` (navegadores baixados).
+- **Engine** (`scraper_compras.py`): removidos `requests` + `lxml` + `BrowserSession`/playwright direto. Estratégia em cascata:
+  1) `Fetcher` (HTTP estático, `impersonate="chrome"`, `stealthy_headers=True`) — camada rápida sem navegador;
+  2) `ScraplingSession` (novo, substitui `BrowserSession` com a mesma interface — init preguiçoso, `fetch(url)` → HTML, `close()` seguro, criado na thread do worker e reutilizado na batelada) com `DynamicSession` (Playwright real Chrome headless, `network_idle`);
+  3) `StealthySession` (Patchright real Chrome headless, `solve_cloudflare=True`) acionado quando há desafio.
+- **Parsing**: `lxml.html` trocado por `Selector` do Scrapling (`.css`/`.xpath`), mantendo a cascata JSON-LD → Open Graph → título → seletor da loja; seletores de loja com `adaptive=True`; novo fallback genérico de preço ("R$" com valor plausível) quando o seletor específico não acha.
+- **Lojas**: Magazine Luiza testada com a nova stack — homepage abre, mas páginas de produto/categoria ainda retornam 403 ou desafio (anti-bot proprietário) → mantida em `UNSUPPORTED_STORES` com a mensagem clara. Amazon e Mercado Livre revalidados ao vivo.
+- **Validação**: regressão offscreen OK (17 casos `normalize_price` idênticos ao anterior, detecção de loja, parse sintético JSON-LD/OG/seletor/fallback genérico, detecção de desafio, Magalu bloqueada); ao vivo — Kabum via `Fetcher` (0,6s), Amazon via `fetch_product` (R$ 1549,00) e via `ScraplingSession` (navegador), batelada de 2 produtos com sessão reutilizada (4,4s); `import scraper_compras`, `import compras_ui` e `import main` OK no Python 3.12.
+
+---
+
 ## 2026-08-11 — Mesclagem da pasta `to_compare` no projeto raiz
 
 - A pasta `to_compare` continha a versão mais nova (2026-08-11) do app; a raiz estava em 2026-08-10. Mesclado `to_compare` → raiz (robo-copy, sem `__pycache__`).

@@ -72,7 +72,7 @@ class PriceWorker(QThread):
     def run(self):
         ok = 0
         fail = 0
-        session = scraper_compras.BrowserSession()
+        session = scraper_compras.ScraplingSession()
         try:
             for pid in self._ids:
                 if self.isInterruptionRequested():

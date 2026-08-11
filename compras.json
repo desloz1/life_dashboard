@@ -4,7 +4,7 @@
     "nome": "Samsung Smart TV 43\" QLED Full HD Q5F 2025, Xbox Cloud Gaming, Canais Gratuitos, HDR, Som em Movimento Virtual | Amazon.com.br",
     "url": "https://www.amazon.com.br/Samsung-Gaming-Gratuitos-Movimento-Virtual/dp/B0GC17K7K7/",
     "loja": "Amazon",
-    "preco_atual": 1422.06,
+    "preco_atual": 1549.0,
     "preco_alvo": 1300.0,
     "drop_notified": "",
     "historico": [
@@ -19,17 +19,26 @@
       {
         "data": "2026-08-11T14:12:15",
         "preco": 1422.06
+      },
+      {
+        "data": "2026-08-11T17:44:13",
+        "preco": 1549.0
       }
     ]
   },
   {
     "id": "c8aee86d1a744b41b9096684dbffb65b",
-    "nome": "https://www.amazon.com.br/JBL-Bluetooth-Speaker-Preta-JBLGO4BLK/dp/B0CX5C6WP3/",
+    "nome": "JBL, Caixa de Som, Go 4, Bluetooth, Portátil, Auracast, À Prova D'água e Poeira - Preta | Amazon.com.br",
     "url": "https://www.amazon.com.br/JBL-Bluetooth-Speaker-Preta-JBLGO4BLK/dp/B0CX5C6WP3/",
-    "loja": "",
-    "preco_atual": null,
+    "loja": "Amazon",
+    "preco_atual": 249.0,
     "preco_alvo": 200.0,
     "drop_notified": "",
-    "historico": []
+    "historico": [
+      {
+        "data": "2026-08-11T17:44:16",
+        "preco": 249.0
+      }
+    ]
   }
 ]

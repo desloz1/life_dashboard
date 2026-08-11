@@ -12,14 +12,18 @@ if not exist "%PS_EXE%" set "PS_EXE=powershell.exe"
 rem ------------------------------------------------------------------
 rem 1) Procurar um Python ja instalado
 rem ------------------------------------------------------------------
-rem 1a) python.exe no PATH (expansao nativa do cmd, sem where.exe)
-for %%i in (python.exe) do set "PYTHON_EXE=%%~$PATH:i"
-
-rem 1b) instalacao padrao por usuario (python.org)
+rem 1a) instalação padrão por usuário (python.org). Prioridade ao 3.12+,
+rem     pois o Scrapling exige Python 3.10+.
 if not defined PYTHON_EXE (
-    for %%v in (313 312 311 310) do (
+    for %%v in (312 313 311 310) do (
         if exist "%LocalAppData%\Programs\Python\Python%%v\python.exe" set "PYTHON_EXE=%LocalAppData%\Programs\Python\Python%%v\python.exe"
     )
+)
+
+rem 1b) python.exe no PATH (expansao nativa do cmd, sem where.exe). Só se
+rem     não achou um 3.10+ por usuário acima; a checagem de versão (1e) garante.
+if not defined PYTHON_EXE (
+    for %%i in (python.exe) do set "PYTHON_EXE=%%~$PATH:i"
 )
 
 rem 1c) instalacao local conhecida desta maquina
@@ -32,9 +36,9 @@ if not defined PYTHON_EXE (
     if exist "%LocalAppData%\Programs\Python\Launcher\py.exe" set "PYTHON_EXE=%LocalAppData%\Programs\Python\Launcher\py.exe"
 )
 
-rem 1e) exige Python >= 3.9
+rem 1e) exige Python >= 3.10 (Scrapling não roda em versões anteriores)
 if defined PYTHON_EXE (
-    "%PYTHON_EXE%" -c "import sys;sys.exit(0 if sys.version_info>=(3,9) else 1)" >nul 2>nul
+    "%PYTHON_EXE%" -c "import sys;sys.exit(0 if sys.version_info>=(3,10) else 1)" >nul 2>nul
     if errorlevel 1 set "PYTHON_EXE="
 )
 
@@ -62,7 +66,7 @@ rem ------------------------------------------------------------------
 rem 3) Verificar e instalar dependencias
 rem ------------------------------------------------------------------
 echo Python encontrado: %PYTHON_EXE%
-"%PYTHON_EXE%" -c "import PySide6, qtawesome, requests, keyring, lxml" >nul 2>nul
+"%PYTHON_EXE%" -c "import PySide6, qtawesome, requests, keyring, lxml, scrapling" >nul 2>nul
 if errorlevel 1 (
     echo Instalando dependencias do app...
     call :install_deps "%PYTHON_EXE%"
@@ -113,5 +117,5 @@ rem ==================================================================
     "%~1" -m ensurepip --upgrade >nul 2>nul
     "%~1" -m pip install -r requirements.txt
     if errorlevel 1 exit /b 1
-    "%~1" -c "import PySide6, qtawesome, requests, keyring, lxml" >nul 2>nul
+    "%~1" -c "import PySide6, qtawesome, requests, keyring, lxml, scrapling" >nul 2>nul
     exit /b %errorlevel%

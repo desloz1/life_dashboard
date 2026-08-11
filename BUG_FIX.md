@@ -1,5 +1,12 @@
 ---
 
+## 2026-08-11 — Preço do produto Amazon incorreto após a migração para Scrapling
+
+- **Causa**: `scraper_compras.py` (`_amazon_price`) pegava `page.css(".a-offscreen")[0]` — na página real, a Amazon emite vários elementos `.a-offscreen` (títulos de produtos recomendados + preços) e o **primeiro** passou a ser um título (`'Samsung Smart TV 43" FHD F6000F 2025'`), não o preço. O `normalize_price` desse texto devolvia um número absurdo (ex.: `4360002025.0`) que substituía o preço real na cascata de parsing.
+- **Solução**: `scraper_compras.py` (`_amazon_price`) — percorre todos os `.a-offscreen` e retorna o primeiro cujo texto contenha `R$` e normalize para um valor válido (o preço da Amazon sempre vem com a moeda). Validado ao vivo: preço correto (R$ 1549,00) tanto via `Fetcher` quanto via `ScraplingSession`.
+
+---
+
 ## 2026-08-11 — Aba Compras: "NameError: name 'QCursor' is not defined" no leaveEvent
 
 - **Causa**: `compras_ui.py:309` (`ProductCard.leaveEvent`) usava `QCursor.pos()` mas o import do arquivo só trazia `QDesktopServices` de `PySide6.QtGui` — `QCursor` nunca foi importado. O `leaveEvent` (override de `QFrame`) disparava o traceback ao mover o mouse para fora de um card.

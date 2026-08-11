@@ -2,20 +2,7 @@ import json
 import re
 from urllib.parse import urlparse
 
-import requests
-from lxml import html
-
-try:
-    import urllib3
-
-    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-except Exception:
-    pass
-
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36"
-}
+from scrapling.parser import Selector
 
 STORES = {
     "Amazon": {"domains": ("amazon.com.br", "amazon.com"), "price": "_amazon_price"},
@@ -37,9 +24,29 @@ UNSUPPORTED_STORES = {"Magazine Luiza"}
 
 MIN_HTML_LEN = 5000
 
+# Marcadores de desafio/anti-bot que disparam a escalada para navegador/stealth.
+_CHALLENGE_MARKERS = (
+    "cf-challenge",
+    "cf_chl",
+    "__cf_chl",
+    "jschl",
+    "just a moment",
+    "unusual traffic",
+    "please verify you are a human",
+    "captcha",
+    "challenge-platform",
+    "robot check",
+    "um momento",
+    "verify you are human",
+    "antibot",
+    "anti-bot",
+    "access denied",
+    "attention required",
+)
+
 
 class BlockedError(Exception):
-    """Requests foi bloqueado pela loja (anti-bot); usar navegador."""
+    """A loja bloqueou a coleta (anti-bot/desafio); o chamador deve escalar de camada."""
 
 
 def _clean(text):
@@ -157,9 +164,9 @@ def _extract_product(node, out):
             _extract_product(value, out)
 
 
-def _json_ld(tree):
-    for script in tree.xpath('//script[@type="application/ld+json"]'):
-        text = (script.text or "").strip()
+def _json_ld(page):
+    for script in page.xpath('//script[@type="application/ld+json"]'):
+        text = _clean(str(script.text))
         if not text:
             continue
         try:
@@ -173,42 +180,47 @@ def _json_ld(tree):
     return None
 
 
-def _og_meta(tree):
+def _og_meta(page):
     props = {}
-    for meta in tree.xpath("//meta"):
-        prop = (meta.get("property") or meta.get("name") or "").strip()
+    for meta in page.xpath("//meta"):
+        prop = (meta.attrib.get("property") or meta.attrib.get("name") or "").strip()
         if not prop or prop in props:
             continue
-        value = (meta.get("content") or "").strip()
+        value = (meta.attrib.get("content") or "").strip()
         if value:
             props[prop.lower()] = value
     return props
 
 
-def _page_title(tree):
-    nodes = tree.xpath("//title")
-    return _clean(nodes[0].text_content()) if nodes else ""
+def _page_title(page):
+    nodes = page.xpath("//title")
+    return _clean(str(nodes[0].get_all_text())) if nodes else ""
 
 
-def _amazon_price(tree):
-    node = tree.xpath('//span[contains(@class, "a-offscreen")]')
-    if not node:
-        return None
-    return normalize_price(_clean(node[0].text_content()))
+def _amazon_price(page):
+    # A Amazon emite vários `.a-offscreen` (títulos + preços); o primeiro pode
+    # ser um título. Percorre até achar um nó que seja claramente um preço.
+    for node in page.css(".a-offscreen", adaptive=True):
+        text = _clean(str(node.text))
+        if "R$" in text.upper():
+            price = normalize_price(text)
+            if price is not None:
+                return price
+    return None
 
 
-def _ml_price(tree):
-    frac = tree.xpath('//span[contains(@class, "andes-money-amount__fraction")]')
+def _ml_price(page):
+    frac = page.css(".andes-money-amount__fraction", adaptive=True)
     if not frac:
         return None
-    text = _clean(frac[0].text_content())
-    cents = tree.xpath('//span[contains(@class, "andes-money-amount__cents")]')
+    text = _clean(str(frac[0].text))
+    cents = page.css(".andes-money-amount__cents", adaptive=True)
     if cents:
-        text += "," + _clean(cents[0].text_content())
+        text += "," + _clean(str(cents[0].text))
     return normalize_price(text)
 
 
-def _store_price(tree, url):
+def _store_price(page, url):
     name, entry = _store_entry(url)
     if not entry or not entry.get("price"):
         return None
@@ -216,91 +228,27 @@ def _store_price(tree, url):
     if fn is None:
         return None
     try:
-        return fn(tree)
+        return fn(page)
     except Exception:
         return None
 
 
-class BrowserSession:
-    """Reutiliza o Chrome do sistema (janela visível) entre várias coletas.
-
-    A inicialização é preguiçosa: o navegador só abre quando uma loja bloquear
-    o `requests`. Lancado na mesma thread que o usa (cada worker cria o seu).
-    """
-
-    def __init__(self):
-        self._pw = None
-        self._browser = None
-        self._page = None
-
-    def _ensure(self):
-        if self._browser is not None:
-            return self._page
-        try:
-            from playwright.sync_api import sync_playwright
-        except ImportError as exc:
-            raise BlockedError(
-                "Navegador não disponível: instale o playwright (pip install playwright)."
-            ) from exc
-        self._pw = sync_playwright().start()
-        self._browser = self._pw.chromium.launch(channel="chrome", headless=False)
-        self._page = self._browser.new_page(locale="pt-BR")
-        return self._page
-
-    def fetch(self, url, timeout=30000):
-        page = self._ensure()
-        page.goto(url, timeout=timeout, wait_until="load")
-        page.wait_for_timeout(5000)
-        content = page.content()
-        if len(content) < MIN_HTML_LEN:
-            # desafio intermitente (robot check): recarrega uma vez e espera mais
-            try:
-                page.reload(timeout=timeout, wait_until="load")
-                page.wait_for_timeout(6000)
-                content = page.content()
-            except Exception:
-                pass
-        return content
-
-    def close(self):
-        for closer in (self._close_page, self._close_browser, self._stop_pw):
-            try:
-                closer()
-            except Exception:
-                pass
-
-    def _close_page(self):
-        if self._page is not None:
-            self._page.close()
-            self._page = None
-
-    def _close_browser(self):
-        if self._browser is not None:
-            self._browser.close()
-            self._browser = None
-
-    def _stop_pw(self):
-        if self._pw is not None:
-            self._pw.stop()
-            self._pw = None
+def _generic_price(page):
+    """Fallback por padrão monetário: primo elemento com 'R$' e valor de preço plausível."""
+    for node in page.css("span, p, div, b, strong")[:150]:
+        text = _clean(str(node.get_all_text()))
+        if "R$" not in text or len(text) > 40:
+            continue
+        price = normalize_price(text)
+        if price is not None and price <= 200000:
+            return price
+    return None
 
 
-def _requests_tree(url, timeout=15):
-    response = requests.get(url, headers=HEADERS, timeout=timeout, verify=False)
-    if response.status_code != 200:
-        raise BlockedError(f"HTTP {response.status_code}")
-    if len(response.content) < MIN_HTML_LEN:
-        raise BlockedError("resposta pequena demais (provável desafio anti-bot)")
-    try:
-        return html.fromstring(response.content)
-    except Exception as exc:
-        raise BlockedError(f"HTML inválido: {exc}") from exc
-
-
-def _parse_single(tree, url):
+def _parse_single(page, url):
     result = {"nome": "", "preco": None, "loja": store_name(url)}
 
-    ld = _json_ld(tree)
+    ld = _json_ld(page)
     if ld:
         if ld.get("name"):
             result["nome"] = ld["name"]
@@ -308,7 +256,7 @@ def _parse_single(tree, url):
             result["preco"] = ld["price"]
 
     if not result["nome"] or result["preco"] is None:
-        props = _og_meta(tree)
+        props = _og_meta(page)
         if not result["nome"]:
             result["nome"] = props.get("og:title", "")
         if result["preco"] is None:
@@ -318,21 +266,153 @@ def _parse_single(tree, url):
                     break
 
     if result["preco"] is None:
-        result["preco"] = _store_price(tree, url)
+        result["preco"] = _store_price(page, url)
+
+    if result["preco"] is None:
+        result["preco"] = _generic_price(page)
 
     if not result["nome"]:
-        result["nome"] = _page_title(tree)
+        result["nome"] = _page_title(page)
 
     result["nome"] = _clean(result["nome"]) or "Produto sem nome"
     return result
 
 
+def _is_challenge(page):
+    """Detecta padrões típicos de desafio/anti-bot numa página carregada."""
+    try:
+        haystack = _clean(str(page.get_all_text())).lower()
+    except Exception:
+        haystack = ""
+    return any(marker in haystack for marker in _CHALLENGE_MARKERS)
+
+
+def _build_selector(content, url):
+    """Constrói um Selector (com adaptive habilitado) a partir do HTML bruto."""
+    return Selector(content, url=url, adaptive=True)
+
+
+# ---------------------------------------------------------------------------
+# Engine em cascata (substitui requests + BrowserSession/playwright)
+# ---------------------------------------------------------------------------
+
+def _fetcher_fetch(url, timeout_ms):
+    """Camada 1: HTTP estático com impersonação de TLS (curl_cffi via Scrapling)."""
+    from scrapling.fetchers import Fetcher
+
+    response = Fetcher.get(
+        url,
+        impersonate="chrome",
+        stealthy_headers=True,
+        verify=False,
+        timeout=timeout_ms,
+        follow_redirects=True,
+        selector_config={"adaptive": True},
+    )
+    if response.status != 200:
+        raise BlockedError(f"HTTP {response.status}")
+    body = response.body or b""
+    if len(body) < MIN_HTML_LEN:
+        raise BlockedError("resposta pequena demais (provável desafio anti-bot)")
+    page = _build_selector(body, url)
+    if _is_challenge(page):
+        raise BlockedError("desafio anti-bot detectado")
+    return page
+
+
+class ScraplingSession:
+    """Sessão de navegador (Scrapling) reutilizada entre as coletas de uma batelada.
+
+    Substitui o antigo `BrowserSession`. Inicialização preguiçosa (o navegador só
+    abre quando o `Fetcher` é bloqueado), lançada na mesma thread que a usa (cada
+    worker cria a sua) e reutilizada entre os produtos da batelada.
+
+    Cascata interna:
+      1) `DynamicSession` (Playwright, real Chrome) para páginas com JS;
+      2) `StealthySession` (Patchright, real Chrome, Cloudflare) para anti-bot pesado.
+    """
+
+    def __init__(self, timeout_ms=30000):
+        self._timeout_ms = timeout_ms
+        self._dynamic = None
+        self._stealth = None
+
+    def fetch(self, url):
+        try:
+            return self._fetch_dynamic(url)
+        except Exception:
+            self._close_dynamic()
+            return self._fetch_stealth(url)
+
+    def _fetch_dynamic(self, url):
+        if self._dynamic is None:
+            from scrapling.fetchers import DynamicSession
+
+            self._dynamic = DynamicSession(
+                headless=True,
+                real_chrome=True,
+                network_idle=True,
+                timeout=self._timeout_ms,
+                selector_config={"adaptive": True},
+            )
+            self._dynamic.start()
+        response = self._dynamic.fetch(url, timeout=self._timeout_ms)
+        page = self._check_response(response, url)
+        if _is_challenge(page):
+            raise BlockedError("desafio detectado no navegador (dynamic)")
+        return page
+
+    def _fetch_stealth(self, url):
+        if self._stealth is None:
+            from scrapling.fetchers import StealthySession
+
+            self._stealth = StealthySession(
+                headless=True,
+                real_chrome=True,
+                solve_cloudflare=True,
+                timezone_id="America/Sao_Paulo",
+                timeout=self._timeout_ms,
+                selector_config={"adaptive": True},
+            )
+            self._stealth.start()
+        response = self._stealth.fetch(url, timeout=self._timeout_ms)
+        return self._check_response(response, url)
+
+    @staticmethod
+    def _check_response(response, url):
+        body = response.body or b""
+        if len(body) < MIN_HTML_LEN:
+            raise ValueError("A página retornou um desafio de navegador.")
+        return _build_selector(body, url)
+
+    def _close_dynamic(self):
+        if self._dynamic is not None:
+            try:
+                self._dynamic.close()
+            except Exception:
+                pass
+            self._dynamic = None
+
+    def close(self):
+        for sess_name in ("_dynamic", "_stealth"):
+            sess = getattr(self, sess_name)
+            if sess is not None:
+                try:
+                    sess.close()
+                except Exception:
+                    pass
+                setattr(self, sess_name, None)
+
+
 def fetch_product(url, timeout=15, session=None):
     """Busca nome e preço atual de um produto.
 
-    Tenta `requests` primeiro; se a loja bloquear (anti-bot), abre o Chrome do
-    sistema (janela visível, via playwright) para aquela coleta. `session` permite
-    reutilizar o mesmo navegador entre vários produtos (batch).
+    Estratégia em cascata (substitui o antigo requests + BrowserSession):
+      1) `Fetcher` (HTTP estático com impersonação, sem abrir navegador);
+      2) `ScraplingSession` (navegador real headless, reutilizado na batelada)
+         com `DynamicSession` e, se houver desafio, `StealthySession`.
+    `session` permite reutilizar a mesma sessão de navegador entre vários
+    produtos (batch) — não precisa ser fechada aqui.
     """
     url = (url or "").strip()
     if not url:
@@ -343,33 +423,28 @@ def fetch_product(url, timeout=15, session=None):
     if store_name(url) in UNSUPPORTED_STORES:
         raise ValueError("Magazine Luiza bloqueia acesso automatizado (anti-bot).")
 
+    timeout_ms = max(1, int((timeout or 15) * 1000))
+
     try:
-        tree = _requests_tree(url, timeout)
-        return _parse_single(tree, url)
+        page = _fetcher_fetch(url, timeout_ms)
+        return _parse_single(page, url)
     except BlockedError:
         pass
+    except Exception as exc:
+        raise ValueError(f"Não foi possível carregar a página da loja: {exc}") from exc
 
+    owned = session is None
     if session is None:
-        session = BrowserSession()
-        owned = True
-    else:
-        owned = False
+        session = ScraplingSession(timeout_ms=timeout_ms)
     try:
-        content = session.fetch(url)
+        page = session.fetch(url)
     except Exception as exc:
         raise ValueError(f"Não foi possível carregar a página da loja: {exc}") from exc
     finally:
         if owned:
             session.close()
 
-    if not content or len(content) < MIN_HTML_LEN:
-        raise ValueError("A página retornou um desafio de navegador.")
-    try:
-        tree = html.fromstring(content)
-    except Exception as exc:
-        raise ValueError(f"Página inválida: {exc}") from exc
-
-    result = _parse_single(tree, url)
+    result = _parse_single(page, url)
     if result["preco"] is None:
         raise ValueError("Não foi possível encontrar o preço do produto.")
     return result
