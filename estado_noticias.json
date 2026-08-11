@@ -1,12 +1,75 @@
 {
-  "saved": [],
-  "hidden": [],
+  "saved": [
+    {
+      "title": "Projeto Jazz na Rua leva concerto gratuito de música instrumental à Prainha, em Blumenau, no dia 16 de agosto",
+      "url": "https://www.informeblumenau.com/projeto-jazz-na-rua-leva-concerto-gratuito-de-musica-instrumental-a-prainha-em-blumenau-no-dia-16-de-agosto/",
+      "image": "https://www.informeblumenau.com/wp-content/uploads/2026/08/jazz-na-rua.jpg",
+      "category": "Geral",
+      "date": "",
+      "source": "Informe Blumenau"
+    }
+  ],
+  "hidden": [
+    {
+      "title": "Blumenau inicia fase preliminar da 51ª edição dos Jogos Estudantis da Primavera",
+      "url": "https://www.informeblumenau.com/blumenau-inicia-fase-preliminar-da-51a-edicao-dos-jogos-estudantis-da-primavera/",
+      "image": "",
+      "category": "Notícias",
+      "date": "10/08/2026",
+      "source": "Informe Blumenau"
+    },
+    {
+      "title": "Futsal e vôlei abrem as disputas da 51ª edição dos Jogos da Primavera em Blumenau",
+      "url": "https://ajnoticias.com.br/noticia/57017/futsal-e-volei-abrem-as-disputas-da-51o-edicao-dos-jogos-da-primavera-em-blumenau",
+      "image": "https://ajnoticias.com.br/images/noticias/57017/2b7f65ae7bca433e2639b0addf072de5.webp",
+      "category": "Tradição",
+      "date": "",
+      "source": "AJ Notícias"
+    },
+    {
+      "title": "Idosa confunde pedais, invade loja de tintas e acaba hospitalizada em SC",
+      "url": "https://ndmais.com.br/seguranca/idosa-confunde-pedais-invade-loja-de-tintas-e-acaba-hospitalizada-em-sc/",
+      "image": "https://static.ndmais.com.br/2026/08/padrao-fotos-blumenau-4.jpg",
+      "category": "Segurança",
+      "date": "10/08/2026 09:17",
+      "source": "ND Mais"
+    },
+    {
+      "title": "Morador é encontrado ferido diante de casa em chamas em Itapema",
+      "url": "https://www.nsctotal.com.br/cotidiano/morador-e-encontrado-ferido-diante-de-casa-em-chamas-em-itapema",
+      "image": "https://img.nsctotal.com.br/wp-content/uploads/2026/08/incendio-itapema-2.jpg",
+      "category": "Cotidiano",
+      "date": "",
+      "source": "NSC Total"
+    },
+    {
+      "title": "Fumaça mobiliza bombeiros em pastelaria no bairro Itoupava Seca, em Blumenau",
+      "url": "https://oblumenauense.com.br/fumaca-mobiliza-bombeiros-em-pastelaria-no-bairro-itoupava-seca-em-blumenau/",
+      "image": "https://oblumenauense.com.br/wp-content/uploads/2026/08/fumaca_pastelaria_R-Sao-Paulo_10-08-26_01.jpg",
+      "category": "Itoupava Seca",
+      "date": "10/08/2026",
+      "source": "O Blumenauense"
+    },
+    {
+      "title": "Expectativa do mercado para inflação de 2026 cai para 5,02%",
+      "url": "https://ajnoticias.com.br/noticia/57003/expectativa-do-mercado-para-inflacao-de-2026-cai-para-5-02-",
+      "image": "https://str1.lnmimg.net/img/2024/01/30/d91ac0b3cb2c7395328f7695c0eae70f.webp",
+      "category": "Economia",
+      "date": "Há 4 horas",
+      "source": "AJ Notícias"
+    }
+  ],
   "seen": [
     "https://www.nsctotal.com.br/cotidiano/sem-carro-caca-buracos-blumenau-orienta-moradores-a-solicitar-rocada-e-manutencao-de-ruas-pela-internet",
     "https://www.informeblumenau.com/tse-cria-conselho-para-acompanhar-desinformacao-e-uso-de-inteligencia-artificial/",
     "https://www.informeblumenau.com/casa-fritz-muller-tera-programacao-especial-gratuita-ao-longo-de-agosto/",
     "https://www.nsctotal.com.br/cotidiano/entrada-discreta-esconde-megaobra-em-andamento-em-ponto-estrategico-de-blumenau",
     "https://ajnoticias.com.br/noticia/57010/adesivo-eleitoral-pode-levar-a-perda-da-cobertura-de-seguro",
-    "https://oblumenauense.com.br/anvisa-derruba-proibicao-de-venda-de-remedios-em-ifood-rappi-e-grandes-marketplaces/"
+    "https://oblumenauense.com.br/anvisa-derruba-proibicao-de-venda-de-remedios-em-ifood-rappi-e-grandes-marketplaces/",
+    "https://ajnoticias.com.br/noticia/57016/banco-central-estuda-interligar-pix-com-sistemas-de-outros-paises",
+    "https://www.informeblumenau.com/blumenau-inicia-fase-preliminar-da-51a-edicao-dos-jogos-estudantis-da-primavera/",
+    "https://oblumenauense.com.br/sus-passa-a-oferecer-teste-de-fezes-para-rastrear-cancer-colorretal/",
+    "https://ndmais.com.br/seguranca/santa-catarina-ja-registrou-quase-8-mil-casos-de-violencia-contra-a-mulher-em-2026-aponta-ministerio/",
+    "https://www.nsctotal.com.br/justica/morador-improvisa-lavanderia-na-garagem-de-predio-e-vira-alvo-de-processo-do-condominio-em-balneario-camboriu"
   ]
 }

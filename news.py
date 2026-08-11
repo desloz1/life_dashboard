@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 
 from PySide6.QtCore import QSize, Qt, QThread, QTimer, QUrl, Signal
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import QDesktopServices, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
@@ -22,8 +22,11 @@ from PySide6.QtWidgets import (
 import qtawesome as qta
 
 import common
+import log
 import scraper
 import theme
+
+logger = log.get_logger("life_dashboard.news")
 
 STATE_FILE = Path(__file__).resolve().parent / "estado_noticias.json"
 
@@ -36,15 +39,16 @@ def _load_state():
             "hidden": data.get("hidden", []),
             "seen": list(dict.fromkeys(data.get("seen", [])))[-200:],
         }
-    except Exception:
+    except Exception as exc:
+        logger.warning("Falha ao ler %s: %s", STATE_FILE, exc)
         return {"saved": [], "hidden": [], "seen": []}
 
 
 def _save_state(state):
     try:
         STATE_FILE.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.error("Falha ao salvar %s: %s", STATE_FILE, exc)
 
 
 def _as_snapshot(item):
@@ -93,6 +97,97 @@ def _relative_time(text):
     return value
 
 
+MONTHS_PT = {
+    "janeiro": 1,
+    "fevereiro": 2,
+    "março": 3,
+    "abril": 4,
+    "maio": 5,
+    "junho": 6,
+    "julho": 7,
+    "agosto": 8,
+    "setembro": 9,
+    "outubro": 10,
+    "novembro": 11,
+    "dezembro": 12,
+}
+
+
+def parse_news_datetime(text, now=None):
+    """Converte a data textual de uma notícia em datetime (ou None)."""
+    value = (text or "").strip()
+    if not value:
+        return None
+    now = now or datetime.datetime.now()
+    low = value.lower()
+
+    if low in ("agora", "hoje"):
+        return now
+    if low == "ontem":
+        return now - datetime.timedelta(days=1)
+    if low == "anteontem":
+        return now - datetime.timedelta(days=2)
+
+    match = re.fullmatch(r"há\s+(\d+)\s+(minuto|hora|dia)s?", low)
+    if match:
+        count = int(match.group(1))
+        unit = match.group(2)
+        if unit.startswith("minuto"):
+            return now - datetime.timedelta(minutes=count)
+        if unit.startswith("hora"):
+            return now - datetime.timedelta(hours=count)
+        return now - datetime.timedelta(days=count)
+
+    match = re.fullmatch(
+        r"(\d{1,2})/(\d{1,2})/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?",
+        value,
+    )
+    if match:
+        day, month, year = int(match.group(1)), int(match.group(2)), int(match.group(3))
+        try:
+            if match.group(4):
+                return datetime.datetime(year, month, day, int(match.group(4)), int(match.group(5)))
+            return datetime.datetime(year, month, day)
+        except ValueError:
+            return None
+
+    match = re.fullmatch(
+        r"(\d{1,2})\s+de\s+(\w+)\s+de\s+(\d{4})(?:\s+(?:às|as|a)\s+(\d{1,2}):(\d{2}))?",
+        low,
+    )
+    if match:
+        month = MONTHS_PT.get(match.group(2))
+        if month is None:
+            return None
+        try:
+            day = int(match.group(1))
+            year = int(match.group(3))
+            if match.group(4):
+                return datetime.datetime(year, month, day, int(match.group(4)), int(match.group(5)))
+            return datetime.datetime(year, month, day)
+        except ValueError:
+            return None
+
+    return None
+
+
+def sort_by_date(items, limit=None):
+    """Ordena notícias da mais recente para a mais antiga; sem data, por último."""
+    dated = []
+    undated = []
+    for item in items:
+        when = parse_news_datetime(item.get("date"))
+        if when is not None:
+            dated.append((when, item))
+        else:
+            undated.append(item)
+    dated.sort(key=lambda pair: pair[0], reverse=True)
+    ordered = [item for _, item in dated] + undated
+    if limit is not None:
+        return ordered[:limit]
+    return ordered
+
+
 class NewsWorker(QThread):
     finished_ok = Signal(list)
     failed = Signal(str)
@@ -111,6 +206,7 @@ class NewsWorker(QThread):
                 raw.extend(scraper.fetch_news(source, limit=10))
             except Exception as exc:
                 errors.append(f"{source}: {exc}")
+                logger.warning("Falha ao buscar notícias de %s: %s", source, exc)
         if not raw:
             self.failed.emit("; ".join(errors) or "Nenhuma notícia carregada")
             return
@@ -146,6 +242,7 @@ class NewsCard(QFrame):
     save_requested = Signal(str)
     hide_requested = Signal(str)
     restore_requested = Signal(str)
+    hovered = Signal(str)
 
     def __init__(self, item, restore_mode=False, parent=None):
         super().__init__(parent)
@@ -186,6 +283,11 @@ class NewsCard(QFrame):
             self.time = QLabel(rel)
             self.time.setObjectName("newsTime")
             meta.addWidget(self.time)
+        self.saved_badge = QLabel()
+        self.saved_badge.setObjectName("savedBadge")
+        self.saved_badge.setToolTip("Salva")
+        self.saved_badge.setVisible(False)
+        meta.addWidget(self.saved_badge)
         meta.addStretch()
 
         if restore_mode:
@@ -226,11 +328,17 @@ class NewsCard(QFrame):
 
     def _set_saved(self, saved):
         self.save_btn.setIcon(qta.icon("fa5s.bookmark", color=theme.ACCENT if saved else theme.MUTED))
+        if saved:
+            self.saved_badge.setPixmap(qta.icon("fa5s.bookmark", color=theme.ACCENT).pixmap(14, 14))
+        else:
+            self.saved_badge.clear()
+        self.saved_badge.setVisible(saved)
 
     def set_seen(self, seen):
         self.setProperty("seen", "true" if seen else "false")
         self.style().unpolish(self)
         self.style().polish(self)
+        self.update()
 
     def _update_actions_visibility(self):
         visible = self.underMouse()
@@ -241,10 +349,12 @@ class NewsCard(QFrame):
             self.restore_btn.setVisible(visible)
 
     def enterEvent(self, event):
+        self.hovered.emit(self._url)
         self._update_actions_visibility()
         super().enterEvent(event)
 
     def leaveEvent(self, event):
+        self.hovered.emit("")
         self._update_actions_visibility()
         super().leaveEvent(event)
 
@@ -258,6 +368,7 @@ class FeaturedCard(QFrame):
     clicked = Signal(str)
     save_requested = Signal(str)
     hide_requested = Signal(str)
+    hovered = Signal(str)
 
     def __init__(self, item, parent=None):
         super().__init__(parent)
@@ -303,6 +414,11 @@ class FeaturedCard(QFrame):
             self.time = QLabel(rel)
             self.time.setObjectName("newsTime")
             meta.addWidget(self.time)
+        self.saved_badge = QLabel()
+        self.saved_badge.setObjectName("savedBadge")
+        self.saved_badge.setToolTip("Salva")
+        self.saved_badge.setVisible(False)
+        meta.addWidget(self.saved_badge)
         meta.addStretch()
         self.save_btn = self._icon_btn("fa5s.bookmark", "Salvar para depois")
         self.save_btn.clicked.connect(lambda: self.save_requested.emit(self._url))
@@ -326,6 +442,11 @@ class FeaturedCard(QFrame):
 
     def _set_saved(self, saved):
         self.save_btn.setIcon(qta.icon("fa5s.bookmark", color=theme.ACCENT if saved else theme.MUTED))
+        if saved:
+            self.saved_badge.setPixmap(qta.icon("fa5s.bookmark", color=theme.ACCENT).pixmap(14, 14))
+        else:
+            self.saved_badge.clear()
+        self.saved_badge.setVisible(saved)
 
     def _refresh_thumb(self):
         width = max(self.thumb.width(), 1)
@@ -342,6 +463,7 @@ class FeaturedCard(QFrame):
         self.setProperty("seen", "true" if seen else "false")
         self.style().unpolish(self)
         self.style().polish(self)
+        self.update()
 
     def _update_actions_visibility(self):
         visible = self.underMouse()
@@ -349,10 +471,12 @@ class FeaturedCard(QFrame):
         self.hide_btn.setVisible(visible)
 
     def enterEvent(self, event):
+        self.hovered.emit(self._url)
         self._update_actions_visibility()
         super().enterEvent(event)
 
     def leaveEvent(self, event):
+        self.hovered.emit("")
         self._update_actions_visibility()
         super().leaveEvent(event)
 
@@ -374,6 +498,9 @@ class NewsView(QWidget):
         self._cards = {}
         self._undo_bar = None
         self._undo_timer = None
+        self._hovered_url = None
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self._setup_shortcuts()
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -454,13 +581,35 @@ class NewsView(QWidget):
         self.scroll.setObjectName("scrollArea")
         self.list_host = QWidget()
         self.list_layout = QVBoxLayout(self.list_host)
-        self.list_layout.setContentsMargins(0, 0, 6, 6)
+        self.list_layout.setContentsMargins(6, 0, 6, 6)
         self.list_layout.setSpacing(10)
         self.list_layout.addStretch()
         self.scroll.setWidget(self.list_host)
         root.addWidget(self.scroll, 1)
 
         self.load_news()
+
+    def _setup_shortcuts(self):
+        save_shortcut = QShortcut(QKeySequence("Ctrl+S"), self)
+        save_shortcut.setContext(Qt.ShortcutContext.WidgetShortcut)
+        save_shortcut.activated.connect(self._shortcut_save)
+        hide_shortcut = QShortcut(QKeySequence("Ctrl+H"), self)
+        hide_shortcut.setContext(Qt.ShortcutContext.WidgetShortcut)
+        hide_shortcut.activated.connect(self._shortcut_hide)
+
+    def _shortcut_save(self):
+        if self._hovered_url:
+            self._toggle_save(self._hovered_url)
+
+    def _shortcut_hide(self):
+        if self._hovered_url:
+            self._hide_item(self._hovered_url)
+
+    def _on_hover(self, url):
+        self._hovered_url = url or None
+
+    def clear_hover(self):
+        self._hovered_url = None
 
     def load_news(self):
         if self._worker and self._worker.isRunning():
@@ -598,6 +747,7 @@ class NewsView(QWidget):
             featured.clicked.connect(self._open_url)
             featured.save_requested.connect(self._toggle_save)
             featured.hide_requested.connect(self._hide_item)
+            featured.hovered.connect(self._on_hover)
             featured.set_seen(head["url"] in seen_urls)
             self._cards[head["url"]] = featured
             self.list_layout.insertWidget(self.list_layout.count() - 1, featured)
@@ -612,6 +762,7 @@ class NewsView(QWidget):
             card.save_requested.connect(self._toggle_save)
             card.hide_requested.connect(self._hide_item)
             card.restore_requested.connect(self._restore_item)
+            card.hovered.connect(self._on_hover)
             card.set_seen(prepared["url"] in seen_urls)
             self._cards[prepared["url"]] = card
             self.list_layout.insertWidget(self.list_layout.count() - 1, card)

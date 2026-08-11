@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 )
 
 import common
+import tasks as tasks_mod
 import theme
 
 PRIORITY_NAMES = {"alta": "Alta", "media": "Média", "baixa": "Baixa"}
@@ -54,6 +55,11 @@ class TaskDialog(QDialog):
         self.category_edit.setPlaceholderText("ex.: Trabalho, Pessoal, Estudo…")
         form.addRow("Categoria:", self.category_edit)
 
+        self.recurrence_combo = QComboBox()
+        for name, key in (("Nenhuma", ""), ("Diária", "diaria"), ("Semanal", "semanal"), ("Mensal", "mensal")):
+            self.recurrence_combo.addItem(name, key)
+        form.addRow("Recorrência:", self.recurrence_combo)
+
         self.no_date_check = QCheckBox("Sem data")
         self.date_edit = QDateEdit()
         self.date_edit.setCalendarPopup(True)
@@ -73,6 +79,8 @@ class TaskDialog(QDialog):
             idx = self.priority_combo.findData(task.priority)
             self.priority_combo.setCurrentIndex(idx if idx >= 0 else 0)
             self.category_edit.setText(task.category)
+            idx = self.recurrence_combo.findData(task.recurrence)
+            self.recurrence_combo.setCurrentIndex(idx if idx >= 0 else 0)
             if task.due:
                 self.date_edit.setDate(QDate.fromString(task.due, "yyyy-MM-dd"))
             else:
@@ -91,6 +99,7 @@ class TaskDialog(QDialog):
             "description": self.desc_edit.text().strip(),
             "priority": self.priority_combo.currentData(),
             "category": self.category_edit.text().strip(),
+            "recurrence": self.recurrence_combo.currentData(),
             "due": "" if self.no_date_check.isChecked() else self.date_edit.date().toString("yyyy-MM-dd"),
         }
         self.accept()
@@ -155,6 +164,8 @@ class TaskCard(QFrame):
             meta_parts.append(PRIORITY_NAMES.get(task.priority, task.priority))
         if task.category:
             meta_parts.append(task.category)
+        if task.recurrence:
+            meta_parts.append(tasks_mod.RECURRENCE_NAMES.get(task.recurrence, task.recurrence))
         state, label = _due_state(task, datetime.date.today())
         if state != "none":
             meta_parts.append(label)
@@ -290,7 +301,7 @@ class TasksView(QWidget):
         self.scroll.setObjectName("scrollArea")
         self.list_host = QWidget()
         self.list_layout = QVBoxLayout(self.list_host)
-        self.list_layout.setContentsMargins(0, 0, 6, 6)
+        self.list_layout.setContentsMargins(6, 0, 6, 6)
         self.list_layout.setSpacing(10)
         self.list_layout.addStretch()
         self.scroll.setWidget(self.list_host)
@@ -377,7 +388,8 @@ class TasksView(QWidget):
         if dialog.exec() == QDialog.DialogCode.Accepted:
             data = dialog.result_data()
             self.manager.add(data["title"], data["description"], data["due"],
-                             priority=data["priority"], category=data["category"])
+                             priority=data["priority"], category=data["category"],
+                             recurrence=data["recurrence"])
             self.refresh()
 
     def _edit_task(self, task_id):
@@ -391,7 +403,10 @@ class TasksView(QWidget):
             task.description = data["description"]
             task.priority = data["priority"]
             task.category = data["category"]
+            task.recurrence = data["recurrence"]
             task.due = data["due"]
+            if not task.due or task.due >= datetime.date.today().isoformat():
+                task.overdue_notified = ""
             self.manager.update(task)
             self.refresh()
 

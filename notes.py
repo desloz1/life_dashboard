@@ -7,6 +7,10 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 
+import log
+
+logger = log.get_logger("life_dashboard.notes")
+
 _DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_PATH = os.path.join(_DIR, "notas.json")
 DEFAULT_ATTACH_DIR = os.path.join(_DIR, "anexos")
@@ -60,7 +64,8 @@ class NoteManager:
                     updated=item.get("updated", ""),
                     attachments=[a for a in attachments if isinstance(a, dict) and a.get("id") and a.get("path")],
                 ))
-        except (OSError, ValueError):
+        except (OSError, ValueError) as exc:
+            logger.error("Falha ao carregar notas de %s: %s", self.path, exc)
             return
 
     def save(self):
@@ -80,8 +85,8 @@ class NoteManager:
         try:
             with open(self.path, "w", encoding="utf-8") as fh:
                 fh.write(json.dumps(data, ensure_ascii=False, indent=2))
-        except OSError:
-            pass
+        except OSError as exc:
+            logger.error("Falha ao salvar notas em %s: %s", self.path, exc)
 
     def add(self, title, content="", priority="", category=""):
         now = datetime.now().isoformat(timespec="seconds")
@@ -119,8 +124,8 @@ class NoteManager:
         if path and os.path.exists(path):
             try:
                 os.remove(path)
-            except OSError:
-                pass
+            except OSError as exc:
+                logger.error("Falha ao remover anexo %s: %s", path, exc)
 
     def attachment_path(self, att):
         """Caminho absoluto do anexo (aceita caminho relativo ou absoluto)."""
@@ -142,7 +147,8 @@ class NoteManager:
             os.makedirs(DEFAULT_ATTACH_DIR, exist_ok=True)
             dest = os.path.join(DEFAULT_ATTACH_DIR, f"{aid}{ext}")
             shutil.copy2(source_path, dest)
-        except OSError:
+        except OSError as exc:
+            logger.error("Falha ao anexar arquivo %s: %s", source_path, exc)
             return None
         att = {
             "id": aid,

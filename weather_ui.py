@@ -16,8 +16,11 @@ from PySide6.QtWidgets import (
 )
 
 import common
+import log
 import theme
 import weather
+
+logger = log.get_logger("life_dashboard.weather_ui")
 
 WEEKDAYS_FULL = [
     "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira",
@@ -44,6 +47,12 @@ class WeatherWorker(QThread):
         try:
             data = weather.get_weather()
         except requests.RequestException as exc:
+            logger.warning("Falha ao buscar clima: %s", exc)
+            if not self.isInterruptionRequested():
+                self.failed.emit(str(exc))
+            return
+        except Exception as exc:
+            logger.error("Erro inesperado ao buscar clima: %s", exc)
             if not self.isInterruptionRequested():
                 self.failed.emit(str(exc))
             return
@@ -201,7 +210,7 @@ class WeatherView(QWidget):
         self.page_scroll.setObjectName("scrollArea")
         self.page_host = QWidget()
         self.page_layout = QVBoxLayout(self.page_host)
-        self.page_layout.setContentsMargins(0, 0, 6, 6)
+        self.page_layout.setContentsMargins(6, 0, 6, 6)
         self.page_layout.setSpacing(16)
         self.page_scroll.setWidget(self.page_host)
         root.addWidget(self.page_scroll, 1)
@@ -247,7 +256,7 @@ class WeatherView(QWidget):
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         host = QWidget()
         row = QHBoxLayout(host)
-        row.setContentsMargins(0, 0, 0, 0)
+        row.setContentsMargins(6, 0, 6, 0)
         row.setSpacing(10)
         scroll.setWidget(host)
         return scroll

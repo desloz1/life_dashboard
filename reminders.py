@@ -5,6 +5,10 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
+import log
+
+logger = log.get_logger("life_dashboard.reminders")
+
 DEFAULT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lembretes.txt")
 
 WEEKDAY_NAMES = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
@@ -91,6 +95,8 @@ def compute_next_trigger(reminder, now=None):
 def describe_schedule(reminder):
     time = reminder.time
     if reminder.trigger_type == "one_time":
+        if not reminder.date:
+            return f"Única às {time} (sem data)"
         day = datetime.strptime(reminder.date, "%Y-%m-%d").strftime("%d/%m/%Y")
         return f"Única em {day} às {time}"
     if reminder.trigger_type == "daily":
@@ -254,7 +260,8 @@ class ReminderManager:
                     current.append(line)
                 if current:
                     blocks.append(current)
-        except OSError:
+        except OSError as exc:
+            logger.error("Falha ao carregar lembretes de %s: %s", self.path, exc)
             return
 
         seen_ids = set()
@@ -282,8 +289,11 @@ class ReminderManager:
             if index:
                 lines.append("")
             lines.append(serialize_reminder(reminder))
-        with open(self.path, "w", encoding="utf-8-sig") as fh:
-            fh.write("\n".join(lines) + "\n")
+        try:
+            with open(self.path, "w", encoding="utf-8-sig") as fh:
+                fh.write("\n".join(lines) + "\n")
+        except OSError as exc:
+            logger.error("Falha ao salvar lembretes em %s: %s", self.path, exc)
 
     def add(self, title, description="", trigger_type="one_time", time="09:00",
             date="", weekdays=None, day_of_month=1, enabled=True):
@@ -340,6 +350,12 @@ class ReminderManager:
                 self.save()
                 return True
         return False
+
+    def search(self, query):
+        q = (query or "").strip().lower()
+        if not q:
+            return list(self.reminders)
+        return [r for r in self.reminders if q in " ".join((r.title, r.description)).lower()]
 
     def check_due(self, now=None):
         now = now or datetime.now()

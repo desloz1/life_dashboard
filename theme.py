@@ -103,7 +103,7 @@ HIGH_CONTRAST = False
 THUMB_WIDTH = 130
 THUMB_HEIGHT = 90
 
-SHADOW_OBJECT_NAMES = ("sidebar", "newsCard", "featuredCard", "reminderCard", "weatherCard", "dayCard", "dashCard", "taskCard", "noteCard")
+SHADOW_OBJECT_NAMES = ("sidebar", "newsCard", "featuredCard", "reminderCard", "weatherCard", "dayCard", "dashCard", "dashStats", "taskCard", "noteCard", "prodCard")
 
 
 def apply_theme(app, name):
@@ -217,6 +217,18 @@ def apply_stylesheet(app):
         }}
         #themeBtn:hover, #settingsBtn:hover {{
             background: {SIDEBAR_HOVER};
+        }}
+        #sidebarSearchBtn {{
+            background: transparent;
+            border: none;
+            border-radius: 12px;
+            padding: 8px;
+        }}
+        #sidebarSearchBtn:hover {{
+            background: {SIDEBAR_HOVER};
+        }}
+        #sidebarSearchBtn:pressed {{
+            background: {SIDEBAR_SELECTED};
         }}
         #sidebarSep {{
             background: {BORDER};
@@ -396,6 +408,83 @@ def apply_stylesheet(app):
         #dashAction:hover {{ background: {SECONDARY_BTN_HOVER}; }}
         #dashAction QToolButton, #dashAction QLabel {{ color: {TEXT}; }}
 
+        #dashNewsHeader {{
+            font-size: 15px;
+            font-weight: 700;
+            color: {TEXT};
+        }}
+        #dashStats {{
+            background: {CARD};
+            border: 1px solid {BORDER};
+            border-radius: 14px;
+        }}
+        #dashStatsTitle {{
+            font-size: 15px;
+            font-weight: 700;
+            color: {TEXT};
+        }}
+        #streakValue {{
+            font-size: 22px;
+            font-weight: 800;
+            color: {WARN};
+        }}
+        #streakLabel {{
+            font-size: 12px;
+            color: {MUTED};
+        }}
+        #weekTotal {{
+            font-size: 13px;
+            font-weight: 600;
+            color: {TEXT};
+        }}
+        #dashCatName {{
+            font-size: 12px;
+            font-weight: 600;
+            color: {TEXT};
+        }}
+        #dashCatPct {{
+            font-size: 11px;
+            color: {MUTED};
+        }}
+        #dashStatsEmpty {{
+            color: {MUTED};
+            font-size: 12px;
+        }}
+        #catBar {{
+            background: {BTN};
+            border: 1px solid {BORDER};
+            border-radius: 6px;
+        }}
+        #catBar::chunk {{
+            background: {ACCENT};
+            border-radius: 5px;
+        }}
+        #dashNewsRow {{
+            background: {CARD};
+            border: 1px solid {BORDER};
+            border-radius: 10px;
+        }}
+        #dashNewsRow:hover {{
+            border: 1px solid {BORDER_HOVER};
+            background: {CARD_HOVER};
+        }}
+        #dashNewsRow[seen="true"] {{
+            background: {PAUSED_BG};
+            border: 1px solid {PAUSED_BORDER};
+        }}
+        #dashNewsRow[seen="true"] #dashNewsTitle {{
+            color: {MUTED};
+        }}
+        #dashNewsBullet {{
+            color: {ACCENT};
+            font-size: 15px;
+        }}
+        #dashNewsTitle {{
+            font-size: 13px;
+            font-weight: 600;
+            color: {TEXT};
+        }}
+
         QProgressBar {{
             background: {BTN};
             border: 1px solid {BORDER};
@@ -458,6 +547,50 @@ def apply_stylesheet(app):
         #taskMeta {{
             font-size: 12px;
             color: {MUTED};
+        }}
+        #prodCard {{
+            background: {CARD};
+            border: 1px solid {BORDER};
+            border-radius: 12px;
+        }}
+        #prodCard:hover {{
+            border: 1px solid {BORDER_HOVER};
+            background: {CARD_HOVER};
+        }}
+        #prodCard[hit="true"] {{
+            background: {OK_SOFT};
+            border: 1px solid {OK};
+        }}
+        #prodIcon {{
+            min-width: 22px;
+        }}
+        #prodTitle {{
+            font-size: 14px;
+            font-weight: 600;
+            color: {TEXT};
+        }}
+        #prodMeta {{
+            font-size: 12px;
+            color: {MUTED};
+        }}
+        #prodHit {{
+            font-size: 11px;
+            font-weight: 700;
+            background: {OK_SOFT};
+            color: {OK};
+            border-radius: 6px;
+            padding: 2px 8px;
+        }}
+        #prodPrice {{
+            font-size: 17px;
+            font-weight: 800;
+            color: {TEXT};
+        }}
+        #prodPrice[hit="true"] {{ color: {OK}; }}
+        #prodPrice[missing="true"] {{
+            color: {MUTED};
+            font-weight: 600;
+            font-size: 15px;
         }}
         #prioBadge {{
             font-size: 11px;
@@ -566,6 +699,28 @@ def apply_stylesheet(app):
             border: 1px solid {PAUSED_BORDER};
         }}
         #agendaRow[completed="true"] #taskTitle {{ color: {MUTED}; }}
+        #holidayRow {{
+            background: {WARN_SOFT};
+            border: 1px solid {WARN};
+            border-radius: 10px;
+        }}
+        #holidayIcon {{
+            min-width: 18px;
+        }}
+        #holidayBadge {{
+            font-size: 11px;
+            font-weight: 700;
+            color: {WARN};
+            background: {WARN_SOFT};
+            border: 1px solid {WARN};
+            border-radius: 6px;
+            padding: 2px 8px;
+        }}
+        #holidayName {{
+            font-size: 13px;
+            font-weight: 600;
+            color: {TEXT};
+        }}
         #dayHeader {{
             font-size: 13px;
             font-weight: 800;
@@ -588,6 +743,9 @@ def apply_stylesheet(app):
         #calCell[today="true"] {{
             border: 1px solid {ACCENT};
             color: {ACCENT};
+        }}
+        #calCell[holiday="true"] {{
+            color: {WARN};
         }}
         #calCell[selected="true"] {{
             background: {ACCENT};
@@ -749,6 +907,11 @@ def apply_stylesheet(app):
             border-radius: 8px;
         }}
         #cardBtn:hover {{ background: {BTN_HOVER}; }}
+        #savedBadge {{
+            background: {ACCENT_SOFT};
+            border-radius: 4px;
+            padding: 2px 4px;
+        }}
 
         #featuredCard {{
             background: {CARD};
@@ -801,6 +964,53 @@ def apply_stylesheet(app):
             font-size: 13px;
         }}
         #newsSearch:focus {{ border: 1px solid {ACCENT}; }}
+
+        #searchRow {{
+            background: {CARD};
+            border: 1px solid {BORDER};
+            border-radius: 10px;
+        }}
+        #searchRow:hover {{
+            border: 1px solid {BORDER_HOVER};
+            background: {CARD_HOVER};
+        }}
+        #searchRow[selected="true"] {{
+            background: {ACCENT_SOFT};
+            border: 1px solid {ACCENT};
+        }}
+        #searchRow[selected="true"] #searchTitle {{ color: {ACCENT}; }}
+        #searchIcon {{
+            min-width: 20px;
+        }}
+        #searchTitle {{
+            font-size: 13px;
+            font-weight: 600;
+            color: {TEXT};
+        }}
+        #searchSnippet {{
+            font-size: 12px;
+            color: {MUTED};
+        }}
+        #searchTag {{
+            color: {MUTED};
+            font-size: 11px;
+            font-weight: 600;
+            background: {BTN};
+            border: 1px solid {BORDER};
+            border-radius: 6px;
+            padding: 2px 8px;
+        }}
+        #searchSection {{
+            font-size: 12px;
+            font-weight: 800;
+            color: {ACCENT};
+            padding: 8px 2px 2px;
+        }}
+        #searchEmpty {{
+            color: {MUTED};
+            font-size: 13px;
+            padding: 30px;
+        }}
 
         #emptyLabel {{
             color: {MUTED};

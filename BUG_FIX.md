@@ -1,9 +1,37 @@
+---
+
+## 2026-08-10 — App não abria: lembrete "única" sem data quebrava o `describe_schedule`
+
+- **Causa**: um lembrete com `Recorrência: única` e `Data:` vazia fazia `reminders.py` (`describe_schedule`) quebrar com `ValueError: time data '' does not match format '%Y-%m-%d'` na montagem do `ReminderCard` — a inicialização da janela falhava logo em `RemindersView`. O `compute_next_trigger` já tratava `not reminder.date`, mas o `describe_schedule` não.
+- **Solução**: `reminders.py` (`describe_schedule`) — quando `one_time` não tem data, retorna `"Única às HH:MM (sem data)"` em vez de chamar `strptime`. Validado offscreen (renderiza card sem data) e `import main` OK.
+
+---
+
+## 2026-08-10 — Borda esquerda dos cards cortada (sombra clippada) nas abas
+
+- **Causa**: os layouts de lista/scroll usavam `setContentsMargins(0, 0, 6, 6)` — margem esquerda **0** enquanto a direita era 6. Como os cards têm `QGraphicsDropShadowEffect` (blur 12–22), o primeiro card encostava exatamente na borda esquerda do viewport e a sombra à esquerda era recortada (pixels transparentes), dando o aspecto de "bolha cortada" na borda esquerda — enquanto à direita a sombra aparecia normal.
+- **Solução**: margem esquerda passou a `6` (igual à direita) nos layouts de Notícias (`news.py`), Lembretes (`reminders_ui.py`), Tarefas (`tasks_ui.py`), Notas (`notes_ui.py`), Agenda (Por dia/Mês/Semana — `agenda_ui.py`), Busca global (`search_ui.py`) e Clima (`weather_ui.py`, página + faixas horizontais). Validado offscreen por análise de pixels: sombra esquerda agora aparece simétrica à direita nos temas claro e escuro; `import main` OK.
+
+---
+
+## 2026-08-10 — Estatísticas de tarefas no Início apareciam quebradas ("4 5 7" soltos)
+
+- **Causa**: o `TaskWeekChart` tinha `setMinimumWidth(220)` e era adicionado no HBox do card `#dashStats` **sem stretch** (a coluna lateral tinha `stretch 1`), então o layout sempre o mantinha em 220 px de largura mesmo com o card com 1050 px+. O gráfico ficava espremido no canto e a linha de números do dia (4, 5, 6, 7…) aparecia descolada no rodapé da bolha, sem conexão visual com as barras. Quando não havia conclusões nos últimos 7 dias (ex.: tarefas antigas, sem `completed_at`), só os números do dia eram pintados sobre a área vazia — parecia texto solto/quebrado.
+- **Solução**: `dashboard_ui.py` — `stats_layout.addWidget(self.stats_chart, 2)` dá stretch ao gráfico (largura passa a ~670 px em janela maximizada), desenhada uma linha de base (`theme.BORDER`) conectando barras aos rótulos, e o `paintEvent` agora mostra "Sem conclusões ainda" centralizado quando o total do período é zero (em vez de pintar só os números do dia). Validado offscreen (temas claro/escuro, com dados e vazio) e `import main` OK.
+
+---
+
 # BUG_FIX — Registro de correções de bugs
 
 Toda correção de defeito de funcionamento ou aparência deve ser registrada aqui,
 com causa e solução. Blocos novos vão ao TOPO, em ordem cronológica.
 
 ---
+
+## 2026-08-10 — Notícia vista não esmaecia ao clicar (sem repaint)
+
+- **Causa**: `set_seen()` (em `NewsCard`, `FeaturedCard` — `news.py` — e `DashNewsRow` — `dashboard_ui.py`) trocava a propriedade `seen` e chamava apenas `style().unpolish()/polish()`. Em widgets com `QGraphicsDropShadowEffect` (o `make_shadow` de todos os cards de notícia), essa sequência reavalia a regra QSS mas **não agenda repintura** (bug conhecido do Qt); o esmaecimento `[seen="true"]` só aparecia quando outro evento forçava repaint. Além disso, no tema claro o fundo `PAUSED_BG` vs `CARD` é quase idêntico (255 vs 247), o que tornava o efeito praticamente invisível.
+- **Solução**: adicionado `self.update()` logo após o repolish nos três `set_seen` — agenda um `paintEvent` que re-renderiza o card através do efeito gráfico, aplicando imediatamente o fundo/título esmaecidos. Validado offscreen: clique real (QTest) muda a cor de fundo e do título nos dois temas e `import main` OK.
 
 ## 2026-08-10 — Aba Clima não carregava (conteúdo quebrado por erro de SSL)
 

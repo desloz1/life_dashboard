@@ -17,8 +17,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+import log
 import scraper
 import theme
+
+logger = log.get_logger("life_dashboard.common")
 
 CACHE_DIR = Path(__file__).resolve().parent / "cache" / "images"
 
@@ -128,8 +131,8 @@ def download_image_bytes(url):
         cache_path.parent.mkdir(parents=True, exist_ok=True)
         if cache_path.exists() and (time.time() - cache_path.stat().st_mtime) < 24 * 3600:
             return cache_path.read_bytes()
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("Falha ao ler cache de imagem %s: %s", url, exc)
     try:
         response = requests.get(url, headers=scraper.HEADERS, timeout=10)
         if response.status_code != 200:
@@ -138,10 +141,11 @@ def download_image_bytes(url):
         try:
             cache_path.parent.mkdir(parents=True, exist_ok=True)
             cache_path.write_bytes(data)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Falha ao gravar cache de imagem %s: %s", url, exc)
         return data
-    except requests.RequestException:
+    except requests.RequestException as exc:
+        logger.warning("Falha ao baixar imagem %s: %s", url, exc)
         return None
 
 
@@ -190,6 +194,6 @@ def pixmap_from_cache(url):
                     Qt.AspectRatioMode.KeepAspectRatioByExpanding,
                     Qt.TransformationMode.SmoothTransformation,
                 )
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("Falha ao ler pixmap do cache %s: %s", url, exc)
     return None

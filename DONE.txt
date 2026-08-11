@@ -5,6 +5,171 @@ adicionadas ao topo desta lista, com data, em cada sessão de trabalho.
 
 ---
 
+## 2026-08-10 — Logging básico (app.log)
+
+- `log.py` (novo): logging centralizado com `RotatingFileHandler` (máx. 2 MB, 3 backups) gravando em `app.log` ao lado do código, formato timestamp/nível/módulo. `get_logger()` configura uma vez e devolve loggers filhos de `life_dashboard.*` (herdam o handler).
+- Persistência silenciosa agora registra erros: `notes.py` (`load`/`save`/`attach`/remoção de anexo), `tasks.py` (`load`/`save`), `compras.py` (`load`/`save`), `reminders.py` (`load` e `save` — `save` deixou de propagar OSError sem aviso), `news.py` (`estado_noticias.json` inclui warning no load e erro no save).
+- Falhas de rede/scraping logadas: `news.py`/`dashboard_ui.py` (NewsWorker/DashNewsWorker logam falha por fonte), `common.py` (`download_image_bytes` e `pixmap_from_cache`), `weather_ui.py` (WeatherWorker loga falha de requisição e erros inesperados), `notify.py` (falha no envio de e-mail) e `compras_ui.py` (PriceWorker loga a URL do produto que falhou ao coletar).
+- `import main` OK; `app.log` criado e `get_logger("life_dashboard.*")` grava corretamente.
+
+---
+
+## 2026-08-10 — Webcrawler de compras (fase 4: fallback navegador para anti-bot)
+
+- `scraper_compras.py`: `fetch_product` passou a tentar **`requests` primeiro** e, se a loja bloquear (`BlockedError`: status ≠ 200, HTML pequeno/desafio ou parse inválido), abre o **Chrome do sistema via playwright com janela visível** (headed) para aquela coleta — testes ao vivo: Amazon (R$ 118,74), além de Mercado Livre/Pichau/Casas Bahia/Terabyte que renderizam; headless foi detectado pelos desafios JS (Terabyte "Um momento…").
+- `BrowserSession` (novo): sessão preguiçosa de playwright (`channel="chrome"`, reutiliza Chrome instalado, sem baixar navegador) — só abre quando necessário e é **reutilizada entre os produtos de uma batelada**; `close()` seguro quando nunca abriu. `fetch()` recarrega uma vez quando cai em "robot check" intermitente da Amazon.
+- `UNSUPPORTED_STORES = {"Magazine Luiza"}`: Magalu bloqueia até navegador real (página anti-bot) — `fetch_product` falha com mensagem clara e **sem abrir janela**.
+- `compras_ui.py` (`PriceWorker`): cria um `BrowserSession` no run() (mesma thread, exigência do sync API do playwright) e passa a cada `fetch_product`; falha por produto continua não derrubando os demais.
+- `requirements.txt`: adicionado `playwright>=1.40` (usa Chrome/Edge já instalados, não baixa navegador).
+- Validação offscreen + ao vivo: Magalu levanta erro sem navegador; Kabum segue via requests (R$ 4999,99) sem abrir janela; Amazon via `PriceWorker` (QThread) atualiza nome/loja/preço no app. `import main` OK.
+
+---
+
+## 2026-08-10 — Webcrawler de compras (fase 3: integração no app)
+
+- `main.py`: nova aba **Compras** (`fa5s.shopping-cart`, `Ctrl+8`, 8ª entrada do sidebar) com `ComprasView` + `PriceTracker`; registrada no stack, `_switch_view` (foco na busca ao entrar), `_refresh_lists`, F5 (row 7 → atualiza preços) e `_search_edit_for_row`.
+- `main.py` (`_check_price_drops`): notificação de queda de preço no mesmo padrão de tarefas atrasadas — a cada tick de 15 s verifica `hit_products()` recém atingidos (porta `drop_notified != hoje`) e mostra popup "Preço no alvo" (lista de produtos + preço, até 6 + "e mais N") e som, **1× por dia por produto**; marca via `mark_drop_notified`.
+- `main.py` (`_setup_scheduler`): novo `_prices_timer` (30 min) → `_prices_tick()` atualiza os preços em segundo plano (silencioso, sem travar a UI); a queda detectada é notificada no tick seguinte.
+- `main.py`: ação "Atualizar preços" no menu da bandeja; `closeEvent` para também o `_prices_timer` e faz `compras_view.shutdown()`.
+- `notify.py`: novo som `price_drop` em `TYPE_SOUNDS`.
+- Validação offscreen em `%TEMP%\opencode`: 8 entradas no sidebar, navegação para Compras (visível + foco), volta ao Início, `_check_price_drops` (detecta, marca hoje, não repete no mesmo dia, re-alerta em outro dia, sem alvo não notifica), sweep de todas as abas nos temas claro/escuro e `import main` OK.
+
+---
+
+## 2026-08-10 — Webcrawler de compras (fase 2: aba Compras)
+
+- `compras_ui.py` (novo): `ComprasView` — cabeçalho (título, status, busca, "Atualizar preços" e "Adicionar produto"), lista rolável de `ProductCard` com `common.make_shadow`.
+- `ProductCard`: ícone de sacola, título (tooltip), badge da loja (`#newsSource`), meta ("Alvo: R$ … · última coleta"), preço atual grande à direita e ações no hover (abrir na loja `fa5s.external-link-alt`, remover `fa5s.trash-alt`); clique no card abre a URL; card e preço em destaque verde (`#prodCard[hit="true"]`) quando o preço ≤ alvo; preço "—" esmaecido quando ainda não coletado; tooltip do preço lista o histórico (últimas 8 coletas).
+- `AddProductDialog`: campos URL + preço alvo (opcional), botão "Buscar" que resolve nome/preço/loja via `LookupWorker` (QThread) sem travar a UI — ao achar, preenche o resultado e pré-sugere o alvo; se falhar (anti-bot), permite adicionar mesmo assim; se o usuário não buscar, a view dispara um lookup em background para preencher depois.
+- `PriceWorker` (QThread): atualiza todos os produtos em segundo plano (`fetch_product` → `update_price`), contando ok/falhas; falha por produto não derruba os demais; botão desabilitado durante a atualização e status com o resultado ("N atualizados · M falhas — lojas com anti-bot podem não responder").
+- `compras.py` (`update_price`): só registra histórico/novo preço quando a coleta traz preço (coleta falha mantém o último preço conhecido).
+- `theme.py`: estilos `#prodCard` (+`[hit="true"]`), `#prodIcon`, `#prodTitle`, `#prodMeta`, `#prodHit`, `#prodPrice` (+`[hit="true"]`, `[missing="true"]`); `prodCard` adicionado a `SHADOW_OBJECT_NAMES`.
+- Validação offscreen em `%TEMP%\opencode`: formato de preço/data, detecção de queda, render em tema claro/escuro, busca, empty state, diálogo (aceite/parse de alvo) e `import main` OK.
+- Teste ao vivo offscreen: `PriceWorker` atualizou produto real do Kabum (nome + loja + preço 4999,99 + 1 histórico) via UI.
+
+---
+
+## 2026-08-10 — Webcrawler de compras (fase 1: dados + busca de preço)
+
+- `scraper_compras.py` (novo): `fetch_product(url)` retorna `{nome, preco, loja}` com `requests` + `lxml` (padrão do `scraper.py`, `verify=False` + `urllib3.disable_warnings`).
+  - Estratégia em cascata: JSON-LD (`application/ld+json`, nós `Product`/`Offer`, `@graph`, listas aninhadas) → Open Graph (`og:title`, `og:price:amount`, `product:price:amount`) → `<title>` → seletor por loja (Amazon `.a-offscreen`, Mercado Livre `.andes-money-amount__fraction`+`__cents`).
+  - `STORES` (Amazon, Mercado Livre, Magazine Luiza, Casas Bahia, Americanas, Kabum, Pichau, Terabyte) com detecção por domínio e seletor opcional de preço; `store_name(url)` resolve o nome da loja.
+  - `normalize_price()`: converte "R$ 1.234,56" → 1234.56 (lida com vírgula/ponto, milhares, "1.234", "1,234.56", "R$ 0,99"); retorna `None` para texto inválido.
+- `compras.py` (novo): `Product` (id/nome/url/loja/preco_atual/preco_alvo/drop_notified/histórico) e `PriceTracker` com CRUD persistido em `compras.json` (padrão do `notes.py`).
+  - `update_price()` registra cada coleta no histórico (`{data, preco}`) e zera `drop_notified` (permite novo alerta se o preço subir e cair de novo); `drop_hit()`/`hit_products()` detectam preço ≤ alvo; `mark_drop_notified()` evita repetir alerta no mesmo dia (padrão `overdue_notified` de `tasks.py`).
+- Validação offscreen em `%TEMP%\opencode`: 17 casos de `normalize_price`, detecção de loja, round-trip de persistência, queda de preço e extração JSON-LD/OG/seletor de HTML sintético; `import compras, scraper_compras` OK.
+- Teste ao vivo: Kabum responde a requests simples e `fetch_product` extraiu nome + preço (R$ 4999,99) de um produto real; Amazon/Magalu/Pichau/Casas Bahia/Terabyte bloqueiam requests simples (anti-bot) — falha por produto não derruba os demais (tratado na fase 2/UI).
+
+---
+
+## 2026-08-10 — Sombra dos cards cortada na borda esquerda
+
+- Margem esquerda dos layouts de lista/scroll ajustada de `0` para `6` (simetria com a direita) em Notícias, Lembretes, Tarefas, Notas, Agenda (Por dia/Mês/Semana), Busca global e Clima — a sombra (`QGraphicsDropShadowEffect`) do primeiro card não é mais recortada pelo viewport. Detalhes em `BUG_FIX.md`.
+- `reminders.py` (`describe_schedule`): lembrete `única` sem data não quebra mais a inicialização (retorna "Única às HH:MM (sem data)"). Detalhes em `BUG_FIX.md`.
+
+---
+
+## 2026-08-10 — Tarefas recorrentes (rotina)
+
+- `tasks.py`: `Task` ganhou campo `recurrence` (`""`/`diaria`/`semanal`/`mensal`), persistido em `tarefas.txt` como `recorrência:`; leitura compatível com arquivos antigos (blocos sem o campo e formato pipe legado carregam com recorrência vazia).
+- `tasks.py`: novo `next_occurrence(due, recurrence)` — calcula o próximo vencimento (diária +1 dia, semanal +7 dias, mensal mesmo dia com clamp para o fim do mês via `calendar.monthrange`), nunca retornando data no passado (clamp em hoje).
+- `tasks.py` (`toggle`): ao concluir uma tarefa recorrente, a instância atual é marcada como concluída (com `completed_at`) e **uma nova ocorrência pendente é criada** com o próximo vencimento, título/descrição/prioridade/categoria/recorrência herdados — estatísticas e streak do Início continuam contando cada conclusão.
+- `tasks.py` (`search`): recorrência incluída nos campos pesquisáveis.
+- `tasks_ui.py` (`TaskDialog`): novo campo "Recorrência" (Nenhuma/Diária/Semanal/Mensal), pré-selecionado ao editar; `TaskCard` mostra a recorrência na linha de meta ("Alta · Trabalho · Diária · Hoje").
+- Validação offscreen: `next_occurrence` (diária/semanal/mensal/clamp/nunca no passado), toggle cria a próxima ocorrência, round-trip de persistência, formato pipe legado, busca por recorrência, render + diálogos e `import main` OK.
+
+---
+
+## 2026-08-10 — Notificação de tarefas atrasadas (sino/popup)
+
+- `main.py` (`_check_alarms`): o agendador agora também verifica tarefas com prazo vencido (mesmo tick de 15 s dos lembretes) e reutiliza o sistema de notificação — popup `Tarefas atrasadas` (lista de títulos, agrupados, até 6 + "e mais N") e som distinto, respeitando `NOTIFY_TRAY`/`NOTIFY_SOUND` das Preferências.
+- `tasks.py`: `Task` ganhou campo `overdue_notified` (data ISO do último alerta, persistido em `tarefas.txt` como `notificado:`), métodos `overdue_tasks()` (pendentes com prazo vencido, ordenadas) e `mark_overdue_notified()`; `toggle()` e edição com prazo futuro/removido resetam o campo. Alerta ocorre **uma vez por dia por tarefa** (sem repetir a cada tick).
+- `notify.py`: novo som `task_overdue` em `TYPE_SOUNDS`.
+- Validação offscreen: alerta agrupado, sem repetição no mesmo dia, respeito aos toggles de som/popup, round-trip de persistência, formato legado e `import main` OK.
+
+---
+
+## 2026-08-10 — Lupa de busca global na barra lateral
+
+- `main.py`: novo botão `#sidebarSearchBtn` (ícone lupa `fa5s.search`) no rodapé da barra lateral, acima das Preferências — abre a busca global (mesmo `GlobalSearchDialog` do `Ctrl+F`), com tooltip "Busca global (Ctrl+F)".
+- `theme.py`: estilo `#sidebarSearchBtn` (hover `SIDEBAR_HOVER`, pressed `SIDEBAR_SELECTED`), coerente com os botões de tema/preferências.
+- Validação offscreen: botão presente nos temas claro/escuro, clique dispara a busca global; `import main` OK.
+
+---
+
+## 2026-08-10 — Busca global (Ctrl+F) em qualquer aba
+
+- `search_ui.py` (novo): `GlobalSearchDialog` — busca única ao vivo sobre notícias + notas + tarefas + lembretes, agrupada por seção com contagem (cabeçalho `#searchSection`), navegação por teclado (↑/↓, Enter abre, Esc fecha) e seleção por hover/clique; cada linha (`SearchResultRow`) mostra ícone, título, trecho e etiqueta (`#searchTag`: prioridade/categoria da tarefa, programação do lembrete, fonte/pool da notícia).
+- `search_ui.py` (`collect_results`): agrega as 4 fontes — notícias do feed carregado + salvas + ocultas (`NewsView._items`/`_state`, pool por URL com feed priorizado), `TaskManager.search`, `ReminderManager.search` e `NoteManager.search`.
+- `tasks.py` / `reminders.py`: novos `search(query)` no `TaskManager` (título/descrição/categoria/prioridade/prazo) e no `ReminderManager` (título/descrição), no padrão do `NoteManager.search`.
+- `main.py`: `Ctrl+F` passou a abrir a **busca global** em qualquer aba (antes só focava a busca da aba atual), pré-preenchida com o texto da busca da aba corrente; ao escolher um resultado, navega para a aba correspondente e revela o item (notícias: aba Feed/Salvos/Ocultos coerente com o pool + fonte "Todas"; tarefas: filtros de status/prioridade zerados; notas: seleciona a nota). Buscas por aba continuam funcionando como antes.
+- `theme.py`: estilos `#searchRow` (+`[selected="true"]`), `#searchIcon`, `#searchTitle`, `#searchSnippet`, `#searchTag`, `#searchSection`, `#searchEmpty`.
+- Validação offscreen: resultados corretos por categoria/pool, teclado (↑/↓/Enter/Esc), navegação por resultado em todas as abas, render nos temas claro/escuro e `import main` OK.
+
+---
+
+## 2026-08-10 — Correção: gráfico de estatísticas do Início espremido/quebrado
+
+- `dashboard_ui.py` (`TaskWeekChart`): gráfico agora expande com o card (`addWidget(..., 2)` — antes fixo em 220 px por falta de stretch, números do dia descolados no rodapé); linha de base conecta barras aos rótulos; quando não há conclusões nos últimos 7 dias, mostra "Sem conclusões ainda" centralizado no lugar dos números soltos. Detalhes em `BUG_FIX.md`.
+
+---
+
+## 2026-08-10 — Estatísticas de tarefas no Início
+
+- `tasks.py`: `Task` ganhou campo `completed_at` (data ISO de conclusão), persistido em `tarefas.txt` (`concluída em:`) e preenchido/limpo em `toggle()`/`add()`; leitura compatível com arquivos antigos (vazio).
+- `tasks.py`: novos métodos de estatística — `completed_last_days(7)` (contagem por dia nos últimos N dias), `streak_days()` (sequência consecutiva de dias com ≥1 conclusão, aceita streak que continua "hoje em aberto") e `category_stats()` (total/concluídas/% por categoria, ordenado por total; "Sem categoria" para tarefas sem categoria).
+- `dashboard_ui.py`: nova seção "Estatísticas de tarefas" no Início (abaixo dos atalhos, acima das notícias) com `TaskWeekChart` (barras pintadas com QPainter, últimos 7 dias, destaque do dia de hoje), valor de streak (🔥) e lista de % por categoria com barras de progresso.
+- `theme.py`: estilos `#dashStats`, `#dashStatsTitle`, `#streakValue`, `#streakLabel`, `#weekTotal`, `#dashCatName`, `#dashCatPct`, `#dashStatsEmpty`, `#catBar`; `dashStats` incluído em `SHADOW_OBJECT_NAMES`.
+- `main.py`: `_switch_view` chama `dashboard_view.refresh()` ao voltar para a aba Início — as estatísticas refletem conclusões feitas em Tarefas/Agenda sem depender de F5/tema.
+- Validação offscreen: lógica de datas/streak/categorias com datas artificiais, round-trip de persistência, formato legado pipe, renderização do dashboard nos temas claro/escuro (com e sem tarefas) e `import main` OK.
+
+---
+
+## 2026-08-10 — Notícias: badge "salva" + atalhos de teclado
+
+- `news.py` (`NewsCard` e `FeaturedCard`): novo indicador persistente `#savedBadge` (ícone bookmark ACCENT sobre `ACCENT_SOFT`) sempre visível quando a notícia está salva, sem depender do hover (antes o estado só aparecia no botão que some no hover); `_set_saved()` controla badge + botão.
+- `news.py` (`NewsView`): atalhos `Ctrl+S` (salvar/des-salvar) e `Ctrl+H` (ocultar) agem sobre o card sob o mouse — novo sinal `hovered` nos cards (enter/leave), `_hovered_url` rastreado e limpo ao sair da aba (`clear_hover()`), atalhos com contexto `WidgetShortcut`; `NewsView` com `FocusPolicy.StrongFocus`.
+- `main.py` (`_switch_view`): ao entrar na aba Notícias dá `setFocus()` na view (ativa os atalhos); ao sair, chama `clear_hover()`.
+- `theme.py`: estilo `#savedBadge`.
+- Validação offscreen: 4 cards nos temas claro/escuro; Ctrl+S salva/dessalva e mostra/oculta o badge; Ctrl+H oculta; hover limpo ao sair do card/aba; `import main` OK.
+
+---
+
+## 2026-08-10 — Feriados nacionais brasileiros na Agenda
+
+- `holidays.py` (novo): feriados nacionais do Brasil por ano — datas fixas (Confraternização, Tiradentes, Trabalho, Independência, Aparecida, Finados, Proclamação, Consciência Negra, Natal) + móveis (Carnaval, Sexta-feira Santa, Páscoa, Corpus Christi) calculadas via Páscoa (algoritmo de Meeus/Jones/Butcher); `national_holidays(year)` e `holidays_for(date)`.
+- `agenda_ui.py`: feriados exibidos nas três visões — "Por dia" e "Semana" ganham linha `AgendaHolidayRow` (ícone ★ + badge "Feriado" + nome) sob cada dia; "Mês" marca as células com ★ e cor âmbar (`holiday="true"`) e lista os feriados do dia selecionado no painel inferior.
+- `theme.py`: estilos `#holidayRow`, `#holidayIcon`, `#holidayBadge`, `#holidayName` e `#calCell[holiday="true"]`.
+- Validação offscreen: Agenda renderiza feriados nas visões Por dia/Mês/Semana, navegação de mês/semana e tema claro OK; `import main` OK.
+
+---
+
+## 2026-08-10 — Tarefas: persistência legível em tarefas.txt
+
+- `tasks.py`: `tarefas.txt` agora é salvo em blocos legíveis (`id:`/`título:`/`descrição:`/`prazo:`/`concluída:`/`prioridade:`/`categoria:`) separados por linha em branco, com cabeçalho comentado; antes era uma linha por tarefa em formato pipe (`id|título|descrição|prazo|concluída|prioridade|categoria`).
+- Leitura compatível com os dois formatos: linhas pipe antigas ainda são carregadas e convertidas para o novo formato no próximo `save()` (migração automática do arquivo existente).
+- Validado com teste temporário (offscreen): round-trip completo (adicionar/editar/concluir → salvar → recarregar) preserva todos os campos; `import main` OK.
+
+---
+
+## 2026-08-10 — Início: 10 principais notícias (todas as fontes)
+
+- `dashboard_ui.py`: seção "Últimas notícias" logo abaixo dos atalhos (Notícias/Agenda/Nova tarefa/Novo lembrete) com as 10 notícias mais recentes considerando **todas** as fontes, ordenadas da mais recente para a mais antiga (itens sem data vão por último).
+- Novo `DashNewsWorker` (QThread) busca 10 itens de cada fonte via `scraper.SOURCES` e ordena com `news.sort_by_date`.
+- `news.py`: novos `parse_news_datetime()` (converte datas numéricas `dd/mm/aaaa [hh:mm]`, textuais "10 de agosto de 2026" e relativas "há N hora(s)") e `sort_by_date()` (mais recente primeiro; sem data no fim).
+- `DashNewsRow`: linha compacta com marcador, título (até 2 linhas), badge da fonte e tempo relativo; clique abre a notícia e marca como vista (reusa estado de `estado_noticias.json`); ocultas no feed não aparecem.
+- `theme.py`: estilos `#dashNewsHeader`, `#dashNewsRow` (+`[seen="true"]`), `#dashNewsBullet`, `#dashNewsTitle`.
+- `main.py`: F5 na aba Início recarrega também as notícias do dashboard.
+- Validação offscreen: dashboard renderiza 10 notícias nos temas claro e escuro sem exceções.
+
+---
+
+## 2026-08-10 — Início maximizado
+
+- `main.py`: janela principal abre maximizada (`window.showMaximized()` no lugar de `show()`).
+
+---
+
 ## 2026-08-10 — Ícone para o lançador (run.bat)
 
 - Criado `run.ico` (16–256 px) gerado por script temporário (`%TEMP%\opencode`) com PIL: quadrado arredondado no azul da marca (ACCENT `#5b8cff`) + triângulo de "play" branco — mesmo visual do ícone da bandeja.

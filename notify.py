@@ -12,11 +12,17 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+import log
+
+logger = log.get_logger("life_dashboard.notify")
+
 TYPE_SOUNDS = {
     "one_time": (880, 200),
     "daily": (660, 200),
     "weekly": (550, 220),
     "monthly": (440, 260),
+    "task_overdue": (620, 300),
+    "price_drop": (740, 180),
 }
 
 
@@ -161,4 +167,5 @@ class EmailWorker(QThread):
                 self._body,
             )
         except Exception as exc:
+            logger.warning("Falha ao enviar e-mail de lembrete: %s", exc)
             self.failed.emit(str(exc))

@@ -223,7 +223,7 @@ class NotesView(QWidget):
         self.list_scroll.setFixedWidth(260)
         self.list_host = QWidget()
         self.list_layout = QVBoxLayout(self.list_host)
-        self.list_layout.setContentsMargins(0, 0, 6, 6)
+        self.list_layout.setContentsMargins(6, 0, 6, 6)
         self.list_layout.setSpacing(8)
         self.list_layout.addStretch()
         self.list_scroll.setWidget(self.list_host)

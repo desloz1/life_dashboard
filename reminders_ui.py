@@ -336,7 +336,7 @@ class RemindersView(QWidget):
         self.scroll.setObjectName("scrollArea")
         self.list_host = QWidget()
         self.list_layout = QVBoxLayout(self.list_host)
-        self.list_layout.setContentsMargins(0, 0, 6, 6)
+        self.list_layout.setContentsMargins(6, 0, 6, 6)
         self.list_layout.setSpacing(10)
         self.list_layout.addStretch()
         self.scroll.setWidget(self.list_host)

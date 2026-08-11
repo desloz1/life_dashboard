@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 import common
+import holidays
 import theme
 from tasks_ui import PRIORITY_NAMES, TaskDialog
 
@@ -118,6 +119,29 @@ class AgendaTaskRow(QFrame):
         self.title.setFont(font)
 
 
+class AgendaHolidayRow(QFrame):
+    def __init__(self, name, parent=None):
+        super().__init__(parent)
+        self.setObjectName("holidayRow")
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(12, 8, 12, 8)
+        layout.setSpacing(10)
+
+        icon = QLabel()
+        icon.setObjectName("holidayIcon")
+        icon.setPixmap(qta.icon("fa5s.star", color=theme.WARN).pixmap(18, 18))
+        layout.addWidget(icon)
+
+        badge = QLabel("Feriado")
+        badge.setObjectName("holidayBadge")
+        layout.addWidget(badge)
+
+        title = QLabel(name)
+        title.setObjectName("holidayName")
+        layout.addWidget(title, 1)
+
+
 class AgendaView(QWidget):
     def __init__(self, manager, parent=None):
         super().__init__(parent)
@@ -189,7 +213,7 @@ class AgendaView(QWidget):
         self.grouped_scroll.setObjectName("scrollArea")
         self.grouped_host = QWidget()
         self.grouped_layout = QVBoxLayout(self.grouped_host)
-        self.grouped_layout.setContentsMargins(0, 0, 6, 6)
+        self.grouped_layout.setContentsMargins(6, 0, 6, 6)
         self.grouped_layout.setSpacing(8)
         self.grouped_layout.addStretch()
         self.grouped_scroll.setWidget(self.grouped_host)
@@ -234,7 +258,7 @@ class AgendaView(QWidget):
         self.month_list.setObjectName("scrollArea")
         self.month_host = QWidget()
         self.month_layout = QVBoxLayout(self.month_host)
-        self.month_layout.setContentsMargins(0, 0, 6, 6)
+        self.month_layout.setContentsMargins(6, 0, 6, 6)
         self.month_layout.setSpacing(8)
         self.month_layout.addStretch()
         self.month_list.setWidget(self.month_host)
@@ -272,7 +296,7 @@ class AgendaView(QWidget):
         self.week_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.week_host = QWidget()
         self.week_row = QHBoxLayout(self.week_host)
-        self.week_row.setContentsMargins(0, 0, 6, 6)
+        self.week_row.setContentsMargins(6, 0, 6, 6)
         self.week_row.setSpacing(10)
         self.week_scroll.setWidget(self.week_host)
         layout.addWidget(self.week_scroll)
@@ -335,6 +359,10 @@ class AgendaView(QWidget):
         label.setObjectName("dayHeader")
         layout.insertWidget(layout.count() - 1, label)
 
+    def _add_holidays(self, layout, date):
+        for name in holidays.holidays_for(date):
+            layout.insertWidget(layout.count() - 1, AgendaHolidayRow(name))
+
     # ---------- rendering ----------
 
     def refresh(self):
@@ -363,6 +391,7 @@ class AgendaView(QWidget):
             tasks = by_day[date]
             tasks.sort(key=lambda t: (PRIORITY_NAMES.get(t.priority, ""), t.title))
             self._add_header(self.grouped_layout, _day_label(date))
+            self._add_holidays(self.grouped_layout, date)
             for task in tasks:
                 self._add_row(self.grouped_layout, task)
 
@@ -403,6 +432,9 @@ class AgendaView(QWidget):
             else:
                 tasks = self._tasks_for(date)
                 suffix = "  •" * min(len(tasks), 3)
+                if holidays.holidays_for(date):
+                    suffix += "  ★"
+                    btn.setProperty("holiday", True)
                 btn.setText(f"{date.day}{suffix}")
                 if date == today:
                     btn.setProperty("today", True)
@@ -417,6 +449,7 @@ class AgendaView(QWidget):
 
         self.month_day_header.setText(_day_label(self._selected_date))
         self._clear_layout(self.month_layout)
+        self._add_holidays(self.month_layout, self._selected_date)
         selected_tasks = self._tasks_for(self._selected_date)
         for task in sorted(selected_tasks, key=lambda t: (t.completed, PRIORITY_NAMES.get(t.priority, ""), t.title)):
             self._add_row(self.month_layout, task)
@@ -460,6 +493,8 @@ class AgendaView(QWidget):
                 head.style().polish(head)
             head.setAlignment(Qt.AlignmentFlag.AlignCenter)
             col_layout.addWidget(head)
+
+            self._add_holidays(col_layout, date)
 
             tasks = self._tasks_for(date)
             if not tasks:

@@ -1,3 +1,4 @@
+import datetime
 import sys
 
 import qtawesome as qta
@@ -19,13 +20,16 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+import compras as compras_mod
 import notify
 import notes as notes_mod
 import preferences
 import reminders as rem
+import search_ui
 import tasks as tasks_mod
 import theme
 from agenda_ui import AgendaView
+from compras_ui import ComprasView, format_price
 from dashboard_ui import DashboardView
 from news import NewsView
 from notes_ui import NotesView
@@ -119,6 +123,7 @@ class MainWindow(QMainWindow):
             ("Tarefas", "fa5s.tasks", True),
             ("Agenda", "fa5s.calendar-alt", True),
             ("Notas", "fa5s.sticky-note", True),
+            ("Compras", "fa5s.shopping-cart", True),
         )
 
         self.theme_btn = QToolButton()
@@ -128,6 +133,15 @@ class MainWindow(QMainWindow):
         self.theme_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.theme_btn.clicked.connect(self._toggle_theme)
         self._update_theme_btn()
+
+        self.search_btn = QToolButton()
+        self.search_btn.setObjectName("sidebarSearchBtn")
+        self.search_btn.setIconSize(QSize(22, 22))
+        self.search_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+        self.search_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.search_btn.setIcon(qta.icon("fa5s.search", color=theme.ACCENT))
+        self.search_btn.setToolTip("Busca global (Ctrl+F)")
+        self.search_btn.clicked.connect(self._open_global_search)
 
         self.settings_btn = QToolButton()
         self.settings_btn.setObjectName("settingsBtn")
@@ -148,6 +162,7 @@ class MainWindow(QMainWindow):
         separator.setObjectName("sidebarSep")
         separator.setFixedHeight(1)
         sidebar_footer.addWidget(separator)
+        sidebar_footer.addWidget(self.search_btn, 0, Qt.AlignmentFlag.AlignHCenter)
         sidebar_footer.addWidget(self.settings_btn, 0, Qt.AlignmentFlag.AlignHCenter)
         sidebar_footer.addWidget(self.theme_btn, 0, Qt.AlignmentFlag.AlignHCenter)
         self.sidebar.add_footer(sidebar_footer)
@@ -163,6 +178,7 @@ class MainWindow(QMainWindow):
         self.reminder_manager = rem.ReminderManager()
         self.tasks_manager = tasks_mod.TaskManager()
         self.notes_manager = notes_mod.NoteManager()
+        self.price_tracker = compras_mod.PriceTracker()
         self.dashboard_view = DashboardView(self.reminder_manager, self.tasks_manager)
         self.news_view = NewsView()
         self.reminders_view = RemindersView(self.reminder_manager)
@@ -170,6 +186,7 @@ class MainWindow(QMainWindow):
         self.agenda_view = AgendaView(self.tasks_manager)
         self.weather_view = WeatherView()
         self.notes_view = NotesView(self.notes_manager)
+        self.compras_view = ComprasView(self.price_tracker)
         self.stack_layout.addWidget(self.dashboard_view)
         self.stack_layout.addWidget(self.news_view)
         self.stack_layout.addWidget(self.reminders_view)
@@ -177,12 +194,14 @@ class MainWindow(QMainWindow):
         self.stack_layout.addWidget(self.tasks_view)
         self.stack_layout.addWidget(self.agenda_view)
         self.stack_layout.addWidget(self.notes_view)
+        self.stack_layout.addWidget(self.compras_view)
         self.dashboard_view.hide()
         self.reminders_view.hide()
         self.weather_view.hide()
         self.tasks_view.hide()
         self.agenda_view.hide()
         self.notes_view.hide()
+        self.compras_view.hide()
 
         self._fade_effect = None
         self._fade_anim = None
@@ -232,13 +251,14 @@ class MainWindow(QMainWindow):
         self.tasks_view.refresh()
         self.agenda_view.refresh()
         self.notes_view.refresh()
+        self.compras_view.refresh()
 
     def _setup_shortcuts(self):
-        for index in range(1, 8):
+        for index in range(1, 9):
             QShortcut(QKeySequence(f"Ctrl+{index}"), self,
                       activated=lambda i=index: self.sidebar.setCurrentRow(i - 1))
         QShortcut(QKeySequence("F5"), self, activated=self._refresh_current)
-        QShortcut(QKeySequence("Ctrl+F"), self, activated=self._focus_search)
+        QShortcut(QKeySequence("Ctrl+F"), self, activated=self._open_global_search)
         QShortcut(QKeySequence("Ctrl+N"), self, activated=self._new_task)
         QShortcut(QKeySequence("Ctrl+="), self, activated=self._zoom_in)
         QShortcut(QKeySequence("Ctrl++"), self, activated=self._zoom_in)
@@ -249,6 +269,7 @@ class MainWindow(QMainWindow):
         row = self.sidebar.currentRow()
         if row == 0:
             self.dashboard_view.refresh()
+            self.dashboard_view.load_news()
         elif row == 1:
             self.news_view.load_news()
         elif row == 3:
@@ -257,19 +278,55 @@ class MainWindow(QMainWindow):
             self.agenda_view.refresh()
         elif row == 6:
             self.notes_view.refresh()
+        elif row == 7:
+            self.compras_view._refresh_prices()
 
-    def _focus_search(self):
-        row = self.sidebar.currentRow()
-        target = {
+    def _search_edit_for_row(self, row):
+        return {
             1: self.news_view.search_edit,
             2: self.reminders_view.search_edit,
             4: self.tasks_view.search_edit,
             5: self.agenda_view.search_edit,
             6: self.notes_view.search_edit,
+            7: self.compras_view.search_edit,
         }.get(row)
-        if target is not None:
-            target.setFocus()
-            target.selectAll()
+
+    def _open_global_search(self):
+        edit = self._search_edit_for_row(self.sidebar.currentRow())
+        dialog = search_ui.GlobalSearchDialog(
+            self.news_view,
+            self.tasks_manager,
+            self.reminder_manager,
+            self.notes_manager,
+            initial_query=edit.text() if edit is not None else "",
+            parent=self,
+        )
+        if dialog.exec() == QDialog.DialogCode.Accepted and dialog.chosen is not None:
+            self._go_to_result(dialog.chosen)
+
+    def _go_to_result(self, result):
+        kind = result["kind"]
+        title = result["title"]
+        if kind == "news":
+            self.sidebar.setCurrentRow(1)
+            pool = result.get("pool", "feed")
+            tab_key = "feed" if pool == "feed" else ("saved" if pool == "saved" else "hidden")
+            self.news_view._tab_buttons[tab_key].setChecked(True)
+            if tab_key == "feed":
+                self.news_view._source_buttons["all"].setChecked(True)
+            self.news_view.search_edit.setText(title)
+        elif kind == "task":
+            self.sidebar.setCurrentRow(4)
+            self.tasks_view._status_buttons["all"].setChecked(True)
+            self.tasks_view._priority_buttons["all"].setChecked(True)
+            self.tasks_view.search_edit.setText(title)
+        elif kind == "reminder":
+            self.sidebar.setCurrentRow(2)
+            self.reminders_view.search_edit.setText(title)
+        elif kind == "note":
+            self.sidebar.setCurrentRow(6)
+            self.notes_view.search_edit.setText(title)
+            self.notes_view._select_note(result["id"])
 
     def _new_task(self):
         self.sidebar.setCurrentRow(4)
@@ -306,6 +363,8 @@ class MainWindow(QMainWindow):
             news_action.triggered.connect(self.news_view.load_news)
             weather_action = menu.addAction(qta.icon("fa5s.cloud-sun", color=theme.ACCENT), "Atualizar clima")
             weather_action.triggered.connect(self.weather_view.load_weather)
+            prices_action = menu.addAction(qta.icon("fa5s.shopping-cart", color=theme.ACCENT), "Atualizar preços")
+            prices_action.triggered.connect(self.compras_view._refresh_prices)
             menu.addSeparator()
             task_action = menu.addAction(qta.icon("fa5s.plus", color=theme.ACCENT), "Nova tarefa")
             task_action.triggered.connect(self._new_task)
@@ -351,6 +410,10 @@ class MainWindow(QMainWindow):
         self._alarm_timer.setInterval(15000)
         self._alarm_timer.timeout.connect(self._check_alarms)
         self._alarm_timer.start()
+        self._prices_timer = QTimer(self)
+        self._prices_timer.setInterval(30 * 60 * 1000)
+        self._prices_timer.timeout.connect(self._prices_tick)
+        self._prices_timer.start()
 
     def _show_notifications(self, fired):
         for reminder in fired:
@@ -373,34 +436,80 @@ class MainWindow(QMainWindow):
 
     def _check_alarms(self):
         fired = self.reminder_manager.check_due()
-        if not fired:
-            return
-        self._show_notifications(fired)
+        if fired:
+            self._show_notifications(fired)
+            self._send_reminder_email(fired)
 
+        changed = fired or self._check_overdue_tasks() or self._check_price_drops()
+        if changed:
+            self._refresh_lists()
+
+    def _prices_tick(self):
+        """Atualização silenciosa de preços em segundo plano (30 em 30 minutos)."""
+        if self.price_tracker.products:
+            self.compras_view._refresh_prices()
+
+    def _check_price_drops(self):
+        """Alerta (popup + som) quando um produto atinge/abaixa do preço alvo, 1×/dia por produto."""
+        today = datetime.date.today().isoformat()
+        fresh = [p for p in self.price_tracker.hit_products() if p.drop_notified != today]
+        if not fresh:
+            return False
+        if theme.NOTIFY_SOUND:
+            notify.play_type_sound("price_drop")
+        if theme.NOTIFY_TRAY:
+            lines = [f"{p.nome}: {format_price(p.preco_atual)}" for p in fresh[:6]]
+            if len(fresh) > 6:
+                lines.append(f"e mais {len(fresh) - 6}")
+            notify.show_notification("Preço no alvo", "\n".join(lines))
+        self.price_tracker.mark_drop_notified([p.id for p in fresh], today)
+        return True
+
+    def _send_reminder_email(self, fired):
         if self._email_worker is not None and self._email_worker.isRunning():
             return
         smtp = preferences.load_smtp_settings()
-        if smtp.get("server") and smtp.get("to"):
-            lines = [f"⏰ {r.title}" for r in fired]
-            message = "\n".join(lines)
-            self._email_worker = notify.EmailWorker(
-                smtp,
-                "Lembrete(s) - Organizador Pessoal",
-                message,
-                self,
+        if not (smtp.get("server") and smtp.get("to")):
+            return
+        lines = [f"⏰ {r.title}" for r in fired]
+        self._email_worker = notify.EmailWorker(
+            smtp,
+            "Lembrete(s) - Organizador Pessoal",
+            "\n".join(lines),
+            self,
+        )
+        self._email_worker.failed.connect(self._email_failed)
+        self._email_worker.start()
+
+    def _check_overdue_tasks(self):
+        """Alerta (popup + som) para tarefas com prazo vencido, uma vez por dia por tarefa."""
+        today = datetime.date.today().isoformat()
+        overdue = [t for t in self.tasks_manager.overdue_tasks() if t.overdue_notified != today]
+        if not overdue:
+            return False
+        if theme.NOTIFY_SOUND:
+            notify.play_type_sound("task_overdue")
+        if theme.NOTIFY_TRAY:
+            titles = " · ".join(t.title for t in overdue[:6])
+            if len(overdue) > 6:
+                titles += f" e mais {len(overdue) - 6}"
+            notify.show_notification(
+                "Tarefas atrasadas",
+                titles,
             )
-            self._email_worker.failed.connect(self._email_failed)
-            self._email_worker.start()
-        self._refresh_lists()
+        self.tasks_manager.mark_overdue_notified([t.id for t in overdue], today)
+        return True
 
     def _email_failed(self, error):
         QMessageBox.warning(self, "Falha ao enviar e-mail", f"Erro ao enviar notificação por e-mail:\n{error}")
 
     def closeEvent(self, event):
         self._alarm_timer.stop()
+        self._prices_timer.stop()
         self.dashboard_view.shutdown()
         self.news_view.shutdown()
         self.weather_view.shutdown()
+        self.compras_view.shutdown()
         super().closeEvent(event)
 
     def _switch_view(self, row):
@@ -411,6 +520,15 @@ class MainWindow(QMainWindow):
         self.tasks_view.setVisible(row == 4)
         self.agenda_view.setVisible(row == 5)
         self.notes_view.setVisible(row == 6)
+        self.compras_view.setVisible(row == 7)
+        if row == 0:
+            self.dashboard_view.refresh()
+        elif row == 1:
+            self.news_view.setFocus()
+        elif row == 7:
+            self.compras_view.search_edit.setFocus()
+        else:
+            self.news_view.clear_hover()
         self._start_fade()
 
     def _start_fade(self):
@@ -481,7 +599,7 @@ def main():
     theme.HIGH_CONTRAST = _as_bool(settings.value("high_contrast", False))
     theme.apply_theme(app, saved_theme)
     window = MainWindow()
-    window.show()
+    window.showMaximized()
     sys.exit(app.exec())
 
 
