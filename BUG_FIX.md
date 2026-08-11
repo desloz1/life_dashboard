@@ -1,5 +1,17 @@
 ---
 
+## 2026-08-11 — Busca de compras: Kabum retornava zero resultados (get_all_text ignora <script>)
+
+- **Causa**: `scraper_compras.py` (`_search_kabum`, novo) lia o bloco `__NEXT_DATA__` da Kabum com `node.get_all_text()` — mas o `get_all_text` do Scrapling **ignora por padrão elementos `script`/`style`**, inclusive o próprio `<script id="__NEXT_DATA__">`, devolvendo texto vazio → `json.loads("")` falhava e a loja aparecia sem resultados.
+- **Solução**: `_next_data()` passa a usar `node.text` (atributo do Selector, texto cru do nó) em vez de `get_all_text()`. Validado ao vivo: `catalogServer.data` com 60 itens e preços corretos (R$ 119,99–189,99).
+
+## 2026-08-11 — Busca de compras: Amazon retornava zero resultados (título é `h2` dentro de `<a>`)
+
+- **Causa**: `_search_amazon` (novo) procurava `card.css("h2 a")`, mas na Amazon atual o link envolve o `h2` (`<a …><h2><span>título</span></h2></a>`), então o seletor nunca achava título/URL o que zerava os resultados.
+- **Solução**: lê o título de `card.css("h2")` e o href do `h2[0].parent` (o `<a>`), com fallback para `a[href]` que contenha `/dp/` ou `/gp/`; adicionado filtro para ignorar links patrocinados `/sspa/click`. Validado ao vivo: resultados orgânicos com preços (R$ 125,00–1149,99).
+
+---
+
 ## 2026-08-11 — Preço do produto Amazon incorreto após a migração para Scrapling
 
 - **Causa**: `scraper_compras.py` (`_amazon_price`) pegava `page.css(".a-offscreen")[0]` — na página real, a Amazon emite vários elementos `.a-offscreen` (títulos de produtos recomendados + preços) e o **primeiro** passou a ser um título (`'Samsung Smart TV 43" FHD F6000F 2025'`), não o preço. O `normalize_price` desse texto devolvia um número absurdo (ex.: `4360002025.0`) que substituía o preço real na cascata de parsing.

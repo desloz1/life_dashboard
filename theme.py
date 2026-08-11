@@ -650,6 +650,29 @@ def apply_stylesheet(app):
             font-weight: 600;
             font-size: 15px;
         }}
+        #webSearchRow {{
+            background: {CARD};
+            border: 1px solid {BORDER};
+            border-radius: 12px;
+        }}
+        #webSearchRow:hover {{
+            border: 1px solid {BORDER_HOVER};
+            background: {CARD_HOVER};
+        }}
+        #webSearchTitle {{
+            font-size: 13px;
+            font-weight: 600;
+            color: {TEXT};
+        }}
+        #addBtnDone {{
+            background: {OK_SOFT};
+            color: {OK};
+            border: none;
+            padding: 6px 12px;
+            font-size: 12px;
+            font-weight: 700;
+        }}
+        #addBtnDone:disabled {{ background: {OK_SOFT}; color: {OK}; }}
         #prioBadge {{
             font-size: 11px;
             font-weight: 700;

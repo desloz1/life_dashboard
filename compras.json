@@ -48,5 +48,20 @@
         "preco": 249.0
       }
     ]
+  },
+  {
+    "id": "f33cbdc0ad3d4386bede21bb06c25c15",
+    "nome": "Sorcery",
+    "url": "https://www.amazon.com.br/Sony-98203-SORCERY-MOVE-PS3/dp/B003O6HAS2/ref=sr_1_8?dib=eyJ2IjoiMSJ9.bwtYI3fuFiLReD0hy8R8-kjil4LRKsfazVcXLEE0uYslF9aRKc0L1joHxuzUNY3FbziuRqKJehjeTB8kvni3Fok9u8v-uY6J_CGbBw-iFr_6KHML1VzdrRwYouoNRqGwx6OyZmrL8wBdsxXcR1odjMqgY2lHMNSQZ0PfGdxOBf8Fq3jUKL6PGV-RT-I38ABH0105Jy3CgPzsf3-Gw65ao-O9FCG4yJI2vG8uFRDh0QHrm7maZiYweV71eEka8Ap8NO-P0qJQW0iBQeR-rWrj2xM9bcHMsqvE694cyZOpL2c.IXp1X6mnpz1QBcRKWCEDA_NFEKo_mfqf_J2fkVA_53o&dib_tag=se&keywords=PS3&qid=1786483262&sr=8-8&ufe=app_do%3Aamzn1.fos.6d798eae-cadf-45de-946a-f477d47705b9",
+    "loja": "Amazon",
+    "preco_atual": 49.0,
+    "preco_alvo": 0.0,
+    "drop_notified": "",
+    "historico": [
+      {
+        "data": "2026-08-11T18:22:31",
+        "preco": 49.0
+      }
+    ]
   }
 ]

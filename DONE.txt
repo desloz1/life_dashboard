@@ -5,6 +5,17 @@ adicionadas ao topo desta lista, com data, em cada sessão de trabalho.
 
 ---
 
+## 2026-08-11 — Compras: busca de produto pelo nome nos sites (preço atual)
+
+- `scraper_compras.py`: novo `search_products(query, stores=None, limit_per_store, timeout, session, progress)` — pesquisa o produto pelo nome nas lojas e devolve `{nome, url, loja, preco}` por resultado, usando o mesmo motor em cascata do `fetch_product` (Fetcher rápido e, se a loja bloquear/retornar vazio por render JS, sobe para `ScraplingSession`/navegador headless reutilizado); `searchable_stores()` (todas exceto Magazine Luiza).
+- `scraper_compras.py`: `_search_url` por loja (Amazon `/s?k=`, ML `lista.mercadolivre.com.br/`, Kabum `/busca/`, Casas Bahia `/busca?q=`, Americanas `/s?q=`, Pichau `/search?q=`, Terabyte `/busca?str=`); parsers dedicados — Amazon (`div[data-component-type='s-search-result']`, título de `h2` via `parent` `<a>`, preço `.a-price .a-offscreen`, patrocinados `/sspa/` ignorados), Kabum via `__NEXT_DATA__` (`catalogServer.data`, preço `priceWithDiscount`, URL `/produto/codigo/friendly`), Mercado Livre (`li.ui-search-layout__item`) e Casas Bahia/Americanas via `[data-testid=product-card]`, Pichau e Terabyte por cards ─ todos com fallback genérico (âncora com título longo + `R$` perto, via `iterancestors`).
+- `compras_ui.py`: novo botão "Buscar produto" no cabeçalho (ao lado de "Adicionar produto"); `SearchProductsDialog` — campo de busca (Enter dispara), checkboxes de lojas (Amazon/Mercado Livre/Kabum marcadas por padrão), status incremental e lista rolável de `SearchResultRow` (ícone, título, badge da loja, preço atual "R$ …" à direita, botão "＋ Adicionar" e abrir na loja); `SearchWorker` (QThread) busca em segundo plano sem travar a UI.
+- `compras_ui.py` (`ComprasView._add_result`): adiciona o resultado ao `PriceTracker` (nome/loja/preço atual, sem alvo), bloqueia duplicado pela URL, marca a linha como "Adicionado ✓"/"Já acompanhado" e atualiza a lista. Diálogo encerra o worker ao fechar.
+- `theme.py`: estilos `#webSearchRow` (+hover), `#webSearchTitle` e `#addBtnDone` ("Adicionado ✓"); margem esquerda da lista do diálogo em 6 (padrão anti-clip de sombra).
+- Validação offscreen em `%TEMP%\opencode`: `search_products` ao vivo — Amazon (R$ 174,53, patrocinados filtrados) e Kabum (R$ 119,99–189,99, via `__NEXT_DATA__`) retornam nome/preço/URL; ML escala ao navegador mas a ML serve captcha a bots (sem itens — esperado); Casas Bahia/Americanas/Pichau/Terabyte bloqueiam automação e ficam como best-effort; `SearchWorker` em QThread (signals + add ao tracker + bloqueio de duplicado + round-trip), diálogo/render nos temas claro/escuro, MainWindow 9 abas e `import main`/`import compras_ui` OK.
+
+---
+
 ## 2026-08-11 — Compras: editar o valor alvo de cada produto
 
 - `compras_ui.py` (`ProductCard`): novo botão de lápis (`fa5s.edit`, `cardBtn`) no hover do card, entre "Abrir na loja" e "Remover" — emite `target_edit_requested` e permite alterar o preço alvo de cada produto individualmente.

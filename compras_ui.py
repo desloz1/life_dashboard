@@ -4,6 +4,7 @@ import qtawesome as qta
 from PySide6.QtCore import QSize, Qt, QThread, QUrl, Signal
 from PySide6.QtGui import QCursor, QDesktopServices
 from PySide6.QtWidgets import (
+    QCheckBox,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
@@ -95,6 +96,252 @@ class PriceWorker(QThread):
             session.close()
         if not self.isInterruptionRequested():
             self.finished.emit(ok, fail)
+
+
+class SearchWorker(QThread):
+    progress = Signal(str)
+    results = Signal(list)
+    finished = Signal(int)
+
+    def __init__(self, query, stores, limit=8, parent=None):
+        super().__init__(parent)
+        self._query = query
+        self._stores = stores
+        self._limit = limit
+
+    def run(self):
+        session = scraper_compras.ScraplingSession(timeout_ms=15000)
+        found = []
+        try:
+            found = scraper_compras.search_products(
+                self._query,
+                stores=self._stores,
+                limit_per_store=self._limit,
+                timeout=12,
+                session=session,
+                progress=lambda store: self.progress.emit(f"Pesquisando em {store}…"),
+            )
+        except Exception as exc:
+            logger.warning("Erro na busca de produtos: %s", exc)
+        finally:
+            session.close()
+        if not self.isInterruptionRequested():
+            self.results.emit(found)
+            self.finished.emit(len(found))
+
+
+class SearchResultRow(QFrame):
+    open_requested = Signal(str)
+    add_requested = Signal(dict)
+
+    def __init__(self, result, parent=None):
+        super().__init__(parent)
+        self.result = result
+        self.added = False
+        self.setObjectName("webSearchRow")
+        common.make_shadow(self, y=3, blur=16)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(10, 8, 12, 8)
+        layout.setSpacing(10)
+
+        icon = QLabel()
+        icon.setObjectName("prodIcon")
+        icon.setPixmap(qta.icon("fa5s.shopping-bag", color=theme.ACCENT).pixmap(20, 20))
+        layout.addWidget(icon)
+
+        text_col = QVBoxLayout()
+        text_col.setSpacing(2)
+        self.title = QLabel(result["nome"])
+        self.title.setObjectName("webSearchTitle")
+        self.title.setWordWrap(True)
+        self.title.setToolTip(result["nome"])
+        text_col.addWidget(self.title)
+
+        meta = QHBoxLayout()
+        meta.setSpacing(8)
+        badge = QLabel(result.get("loja", ""))
+        badge.setObjectName("newsSource")
+        meta.addWidget(badge)
+        price_lbl = QLabel()
+        price_lbl.setObjectName("prodMeta")
+        if result.get("preco") is not None:
+            price_lbl.setText(format_price(result["preco"]))
+        else:
+            price_lbl.setText("preço não encontrado")
+        meta.addWidget(price_lbl)
+        meta.addStretch()
+        text_col.addLayout(meta)
+        layout.addLayout(text_col, 1)
+
+        self.price = QLabel(format_price(result.get("preco")))
+        self.price.setObjectName("prodPrice")
+        if result.get("preco") is None:
+            self.price.setProperty("missing", True)
+            self.price.style().unpolish(self.price)
+            self.price.style().polish(self.price)
+        self.price.setMinimumWidth(100)
+        self.price.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        layout.addWidget(self.price)
+
+        self.add_btn = QPushButton("＋ Adicionar")
+        self.add_btn.setObjectName("secondaryBtn")
+        self.add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.add_btn.clicked.connect(self._request_add)
+        open_btn = QToolButton()
+        open_btn.setObjectName("cardBtn")
+        open_btn.setIcon(qta.icon("fa5s.external-link-alt", color=theme.ACCENT))
+        open_btn.setIconSize(QSize(14, 14))
+        open_btn.setFixedSize(24, 24)
+        open_btn.setToolTip("Abrir na loja")
+        open_btn.clicked.connect(lambda: self.open_requested.emit(result["url"]))
+        layout.addWidget(self.add_btn)
+        layout.addWidget(open_btn)
+
+    def mark_added(self, already=False):
+        self.added = True
+        self.add_btn.setEnabled(False)
+        self.add_btn.setText("Já acompanhado" if already else "Adicionado ✓")
+        self.add_btn.setObjectName("addBtnDone")
+        self.add_btn.style().unpolish(self.add_btn)
+        self.add_btn.style().polish(self.add_btn)
+
+    def _request_add(self):
+        if not self.added:
+            self.add_requested.emit(dict(self.result))
+
+
+class SearchProductsDialog(QDialog):
+    def __init__(self, add_callback, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Buscar produto nas lojas")
+        self.setMinimumWidth(680)
+        self._worker = None
+        self._rows = []
+        self._add_callback = add_callback
+
+        root = QVBoxLayout(self)
+        root.setSpacing(10)
+
+        query_row = QHBoxLayout()
+        self.query_edit = QLineEdit()
+        self.query_edit.setObjectName("newsSearch")
+        self.query_edit.setPlaceholderText("ex.: teclado mecânico, monitor 27…")
+        self.query_edit.returnPressed.connect(self._start_search)
+        self.search_btn = QPushButton(" Buscar")
+        self.search_btn.setObjectName("refreshBtn")
+        self.search_btn.setIcon(qta.icon("fa5s.search", color="#ffffff"))
+        self.search_btn.setIconSize(QSize(14, 14))
+        self.search_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.search_btn.clicked.connect(self._start_search)
+        query_row.addWidget(self.query_edit, 1)
+        query_row.addWidget(self.search_btn)
+        root.addLayout(query_row)
+
+        stores_row = QHBoxLayout()
+        stores_row.setSpacing(10)
+        label_store = QLabel("Lojas:")
+        label_store.setObjectName("prodMeta")
+        stores_row.addWidget(label_store)
+        self.store_checks = {}
+        default_checked = {"Amazon", "Mercado Livre", "Kabum"}
+        for store in scraper_compras.searchable_stores():
+            chk = QCheckBox(store)
+            chk.setChecked(store in default_checked)
+            chk.setObjectName("searchStoreCheck")
+            self.store_checks[store] = chk
+            stores_row.addWidget(chk)
+        stores_row.addStretch()
+        root.addLayout(stores_row)
+
+        self.status = QLabel("")
+        self.status.setObjectName("status")
+        self.status.setWordWrap(True)
+        root.addWidget(self.status)
+
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setObjectName("scrollArea")
+        self.list_host = QWidget()
+        self.list_layout = QVBoxLayout(self.list_host)
+        self.list_layout.setContentsMargins(6, 0, 6, 6)
+        self.list_layout.setSpacing(8)
+        self.list_layout.addStretch()
+        self.scroll.setWidget(self.list_host)
+        root.addWidget(self.scroll, 1)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.rejected.connect(self.reject)
+        root.addWidget(buttons)
+        self.rejected.connect(self.shutdown)
+
+    def _selected_stores(self):
+        return [name for name, chk in self.store_checks.items() if chk.isChecked()]
+
+    def _start_search(self):
+        query = self.query_edit.text().strip()
+        if not query:
+            self.status.setText("Informe o nome do produto primeiro.")
+            return
+        stores = self._selected_stores()
+        if not stores:
+            self.status.setText("Marque pelo menos uma loja para pesquisar.")
+            return
+        if self._worker is not None and self._worker.isRunning():
+            return
+        self._clear_results()
+        self.search_btn.setEnabled(False)
+        self.query_edit.setEnabled(False)
+        self.status.setText("Iniciando busca…")
+        self._worker = SearchWorker(query, stores, limit=8, parent=self)
+        self._worker.progress.connect(self.status.setText)
+        self._worker.results.connect(self._on_results)
+        self._worker.finished.connect(self._on_search_done)
+        self._worker.start()
+
+    def _clear_results(self):
+        while self.list_layout.count() > 1:
+            item = self.list_layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+        self._rows = []
+
+    def _on_results(self, results):
+        for result in results:
+            row = SearchResultRow(result)
+            row.open_requested.connect(self._open_link)
+            row.add_requested.connect(self._on_add)
+            self.list_layout.insertWidget(self.list_layout.count() - 1, row)
+            self._rows.append(row)
+
+    def _on_search_done(self, total):
+        self.search_btn.setEnabled(True)
+        self.query_edit.setEnabled(True)
+        if not total:
+            self.status.setText(
+                "Nenhum resultado encontrado. Muitas lojas bloqueiam acessos "
+                "automatizados (anti-bot); tente outra palavra-chave ou outra loja."
+            )
+        else:
+            self.status.setText(f"{total} resultado{'s' if total != 1 else ''} "
+                                "encontrado(s) — clique em \"＋ Adicionar\" para acompanhar.")
+
+    def _on_add(self, result):
+        added = self._add_callback(result)
+        for row in self._rows:
+            if row.result.get("url") == result["url"]:
+                row.mark_added(not added)
+                break
+
+    def _open_link(self, url):
+        QDesktopServices.openUrl(QUrl(url))
+
+    def shutdown(self):
+        if self._worker is not None:
+            self._worker.requestInterruption()
+            self._worker.wait(3000)
 
 
 class AddProductDialog(QDialog):
@@ -397,6 +644,13 @@ class ComprasView(QWidget):
         self.refresh_btn.setIconSize(QSize(15, 15))
         self.refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.refresh_btn.clicked.connect(self._refresh_prices)
+        self.search_btn = QPushButton(" Buscar produto")
+        self.search_btn.setObjectName("secondaryBtn")
+        self.search_btn.setIcon(qta.icon("fa5s.search", color=theme.ACCENT))
+        self.search_btn.setIconSize(QSize(15, 15))
+        self.search_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.search_btn.setToolTip("Pesquisar um produto pelo nome nas lojas")
+        self.search_btn.clicked.connect(self._search_products)
         self.add_btn = QPushButton(" Adicionar produto")
         self.add_btn.setObjectName("refreshBtn")
         self.add_btn.setIcon(qta.icon("fa5s.plus", color="#ffffff"))
@@ -408,6 +662,7 @@ class ComprasView(QWidget):
         header.addWidget(self.status)
         header.addWidget(self.search_edit)
         header.addWidget(self.refresh_btn)
+        header.addWidget(self.search_btn)
         header.addWidget(self.add_btn)
         root.addLayout(header)
 
@@ -482,6 +737,29 @@ class ComprasView(QWidget):
             self.refresh()
             if data["preco"] is None and not dialog.lookup_done:
                 self._start_lookup(product.id)
+
+    def _search_products(self):
+        dialog = SearchProductsDialog(self._add_result, self)
+        dialog.exec()
+
+    def _add_result(self, result):
+        """Adiciona um resultado da busca na web ao acompanhamento. True se adicionado."""
+        url = (result.get("url") or "").strip()
+        if not url:
+            return False
+        for p in self.manager.products:
+            if p.url.rstrip("/").lower() == url.rstrip("/").lower():
+                return False
+        self.manager.add(
+            url,
+            nome=result.get("nome") or url,
+            loja=result.get("loja") or "",
+            preco_alvo=0.0,
+            preco_atual=result.get("preco"),
+        )
+        self.status.setText(f"\"{(result.get('nome') or url)[:40]}\" adicionado.")
+        self.refresh()
+        return True
 
     def _start_lookup(self, product_id):
         product = self.manager.get(product_id)
