@@ -19,5 +19,5 @@ concluída em:
 prioridade: 
 categoria: 
 recorrência: 
-notificado: 
+notificado: 2026-08-12
 

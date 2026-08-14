@@ -5,6 +5,33 @@ adicionadas ao topo desta lista, com data, em cada sessão de trabalho.
 
 ---
 
+## 2026-08-12 — Suíte de testes automatizados (pytest) para os módulos puros
+
+- `requirements` de teste: `pip install pytest` (pytest 9.1.1; Python 3.12).
+- Nova pasta `tests/` com `conftest.py` (insere a raiz do projeto no `sys.path`; sem criar QApplication nem acessar rede) e 8 arquivos de teste cobrindo regras de negócio/serialização/persistência dos módulos puros: `test_news.py` (parse de datas relativas/BR/ISO, `sort_by_date`, estado salvas/ocultas/vistas), `test_tasks.py` (`next_occurrence` diaria/semanal/mensal + clamp 31 → 28/02, round-trip `tarefas.txt`, toggle recorrente, overdue, search, category_stats, streak), `test_reminders.py` (`compute_next_trigger`/`current_occurrence` p/ todos os tipos, snooze, overdue, `serde` round-trip, `parse_reminder` com dias em PT, `check_due`, `mark_done`), `test_notes.py` (round-trip JSON, pin/ordenação, anexos com `tmp_path`+monkeypatch, `markdown_to_html` com escape/checklist, `preview_html`), `test_compras.py` (`PriceTracker` round-trip + `drop_hit`/`last_price`/`hit_products` + dados malformados), `test_holidays.py` (fixos + móveis Carnaval/Sexta Santa/Páscoa/Corpus Christi), `test_scraper_compras.py` (`normalize_price` — incl. comportamento legado `"R$ 1.234,56 2.345,67" → 1234562345.67` — e `store_name`), `test_theme.py` (paleta tem vars obrigatórias, overrides de alto contraste são subconjunto, `build_stylesheet` gera QSS distinto por tema).
+- Testes usam `tmp_path`/`monkeypatch` para isolar persistência dos arquivos reais do projeto (`tarefas.txt`, `notas.json`, `compras.json`, `estado_noticias.json`, `lembretes.txt`).
+- Bug corrigido de quebra: `notes.preview_html` acessava `theme.BTN`/`theme.BORDER`/`theme.MUTED` diretamente (keys só existiam após `apply_theme`), crashando fora de um QApplication — agora usa `getattr(theme, nome, None)` com fallback de cores fixas (`notes.py:307`).
+- Resultado: `python -m pytest tests -q` → **112 passed**; `import main` segue OK.
+
+---
+
+## 2026-08-12 — theme.py separado em paleta + QSS + tema (refatoração)
+
+- `theme_palette.py` (novo, somente dados): `DARK_THEME`/`LIGHT_THEME`/`THEMES`, `HIGH_CONTRAST_OVERRIDES`, `SHADOW_OBJECT_NAMES`, `THUMB_WIDTH`/`THUMB_HEIGHT`. Sem imports de UI.
+- `stylesheet.py` (novo): `build_stylesheet(palette, font_scale)` — QSS montado a partir de um dict de cores (placeholders `{P['NOME']}`), mais a escala de fonte (`_scale_font_sizes`). Responsável apenas pelo CSS.
+- `theme.py` (reescrito como fachada, ~1207 → ~140 linhas): mantém o estado global (`CURRENT_THEME`, `FONT_SIZE`, `FONT_SCALE`, `NOTIFY_TRAY/SOUND`, `HIGH_CONTRAST`) e injeta a paleta ativa como variáveis do módulo (`theme.ACCENT` etc., via `globals().update`) — compatível com os demais módulos que leem `theme.COR`. `apply_theme`/`apply_stylesheet`/`apply_font_scale`/`set_font_scale`/`apply_shadow_colors` passam a delegar paleta/QSS.
+- Sem mudança visual: QSS gerado (28327 chars) idêntico ao original nos temas claro/escuro (verificado offscreen), font_scale OK, `import theme`/`import stylesheet`/`import theme_palette`/`import main` OK e `MainWindow` constrói as 9 abas em ambos os temas.
+
+## 2026-08-12 — Views gigantes separadas em submódulos (refatoração)
+
+- `news.py` (876 → ~190 linhas) virou **camada de dados pura** (sem PySide6): `_load_state`/`_save_state`, `_as_snapshot`, `_relative_time`, `parse_news_datetime`, `sort_by_date`. A UI (`NewsWorker`, `NewsCard`, `FeaturedCard`, `NewsView`) foi para o novo `news_ui.py` — alinhado à convenção `*_ui.py` do AGENTS.md (`news.py` não importa mais PySide). `main.py` passou a `from news_ui import NewsView`; `dashboard_ui.py` segue consumindo o `news` puro (inalterado).
+- `scraper_compras.py` (885 → fachada ~40 linhas) re-exporta a API pública (`fetch_product`, `ScraplingSession`, `search_products`, `searchable_stores`, `normalize_price`, `store_name`…). A lógica foi dividida por responsabilidade: `scraper_compras_core.py` (config `STORES`, `BlockedError`, detecção de desafio, `normalize_price`, `_build_selector`), `scraper_compras_parse.py` (parse de produto: JSON-LD/OG/seletor/genérico + preços por loja), `scraper_compras_engine.py` (cascata `Fetcher` → `ScraplingSession` = `DynamicSession`/`StealthySession`), `scraper_compras_search.py` (parsers de busca por loja + `search_products`). Sem ciclos de import; `compras.py`/`compras_ui.py` inalterados na interface.
+- `compras_ui.py` (850 → view ~300 linhas): mantém `ComprasView` + `ProductCard` e re-exporta `format_price`/`format_datetime` (usados por `main.py`). Diálogos/linhas → `compras_dialogs.py` (`SearchResultRow`, `SearchProductsDialog`, `AddProductDialog`, `TargetDialog`); QThreads → `compras_workers.py` (`LookupWorker`, `PriceWorker`, `SearchWorker`); formatação → `compras_util.py`.
+- `dashboard_ui.py` (742 → view ~460 linhas): mantém `greeting()` + `DashboardView` (`from dashboard_ui import DashboardView`). Widgets → `dashboard_widgets.py` (`SummaryCard`, `DashNewsRow`, `TaskWeekChart`); QThreads → `dashboard_workers.py` (`DashNewsWorker`, `DashTechWorker`).
+- Validado offscreen: `import main` e imports de todos os novos submódulos OK; regressão de `normalize_price` (10 casos) e parse JSON-LD/seletor/busca sintéticos preservados; render de `NewsView`/`ComprasView`/`DashboardView` e `MainWindow` com sweep das 9 abas nos temas claro e escuro sem exceção (qss 28327 chars). Sem mudança visual ou de comportamento.
+
+---
+
 ## 2026-08-11 — Compras: busca de produto pelo nome nos sites (preço atual)
 
 - `scraper_compras.py`: novo `search_products(query, stores=None, limit_per_store, timeout, session, progress)` — pesquisa o produto pelo nome nas lojas e devolve `{nome, url, loja, preco}` por resultado, usando o mesmo motor em cascata do `fetch_product` (Fetcher rápido e, se a loja bloquear/retornar vazio por render JS, sobe para `ScraplingSession`/navegador headless reutilizado); `searchable_stores()` (todas exceto Magazine Luiza).

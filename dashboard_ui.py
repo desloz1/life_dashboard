@@ -1,8 +1,16 @@
+"""View do Início (dashboard) — painel geral com resumo, estatísticas e notícias.
+
+- Cards/linhas/gráfico → `dashboard_widgets.py`
+- Workers (QThread) → `dashboard_workers.py`
+- `greeting()` e `DashboardView` permanecem acessíveis daqui
+  (`from dashboard_ui import DashboardView`).
+"""
+
 import datetime
 
 import qtawesome as qta
-from PySide6.QtCore import QRectF, QSize, Qt, QThread, QTimer, QUrl, Signal
-from PySide6.QtGui import QColor, QDesktopServices, QPainter
+from PySide6.QtCore import QSize, Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QFrame,
     QGridLayout,
@@ -16,14 +24,12 @@ from PySide6.QtWidgets import (
 )
 
 import common
-import log
 import news
 import reminders as rem
-import scraper
 import theme
+from dashboard_workers import DashNewsWorker, DashTechWorker
+from dashboard_widgets import DashNewsRow, SummaryCard, TaskWeekChart
 from weather_ui import WeatherWorker, format_full_date
-
-logger = log.get_logger("life_dashboard.dashboard")
 
 
 def greeting():
@@ -35,196 +41,6 @@ def greeting():
     if hour < 18:
         return "Boa tarde ⛅"
     return "Boa noite 🌙"
-
-
-class SummaryCard(QFrame):
-    clicked = Signal()
-
-    def __init__(self, icon_name, icon_color, title, parent=None):
-        super().__init__(parent)
-        self.setObjectName("dashCard")
-        common.make_shadow(self, y=3, blur=16)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 14, 16, 14)
-        layout.setSpacing(6)
-
-        top = QHBoxLayout()
-        self.icon_label = QLabel()
-        self.set_icon(icon_name, icon_color)
-        top.addWidget(self.icon_label)
-        title_label = QLabel(title)
-        title_label.setObjectName("dashCardTitle")
-        top.addWidget(title_label)
-        top.addStretch()
-        arrow = QLabel("→")
-        arrow.setObjectName("dashLink")
-        top.addWidget(arrow)
-        layout.addLayout(top)
-
-        self.value = QLabel("—")
-        self.value.setObjectName("dashCardValue")
-        self.value.setWordWrap(True)
-        layout.addWidget(self.value)
-
-        self.sub = QLabel("")
-        self.sub.setObjectName("dashCardSub")
-        self.sub.setWordWrap(True)
-        layout.addWidget(self.sub)
-        layout.addStretch()
-
-    def set_icon(self, icon_name, color):
-        self.icon_label.setPixmap(qta.icon(icon_name, color=color).pixmap(22, 22))
-
-    def mouseReleaseEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
-            self.clicked.emit()
-        super().mouseReleaseEvent(event)
-
-
-class DashNewsWorker(QThread):
-    finished_ok = Signal(list)
-    failed = Signal(str)
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-
-    def run(self):
-        raw = []
-        errors = []
-        for source in scraper.SOURCES:
-            if self.isInterruptionRequested():
-                return
-            try:
-                raw.extend(scraper.fetch_news(source, limit=10))
-            except Exception as exc:
-                errors.append(f"{source}: {exc}")
-                logger.warning("Falha ao buscar notícias de %s: %s", source, exc)
-        if not raw:
-            self.failed.emit("; ".join(errors) or "Nenhuma notícia carregada")
-            return
-        items = news.sort_by_date(raw, limit=10)
-        if not self.isInterruptionRequested():
-            self.finished_ok.emit(items)
-
-
-class DashTechWorker(QThread):
-    finished_ok = Signal(list)
-    failed = Signal(str)
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-
-    def run(self):
-        try:
-            raw = scraper.fetch_tech_news(limit=15)
-        except Exception as exc:
-            logger.warning("Falha ao buscar notícias de tecnologia: %s", exc)
-            if not self.isInterruptionRequested():
-                self.failed.emit(str(exc))
-            return
-        items = news.sort_by_date(raw, limit=10)
-        if not self.isInterruptionRequested():
-            self.finished_ok.emit(items)
-
-
-class DashNewsRow(QFrame):
-    clicked = Signal(str)
-
-    def __init__(self, item, parent=None):
-        super().__init__(parent)
-        self._url = item["url"]
-        self.setObjectName("dashNewsRow")
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(12, 6, 12, 6)
-        layout.setSpacing(10)
-
-        bullet = QLabel("•")
-        bullet.setObjectName("dashNewsBullet")
-        layout.addWidget(bullet)
-
-        self.title = QLabel(item["title"])
-        self.title.setObjectName("dashNewsTitle")
-        self.title.setWordWrap(True)
-        self.title.setMaximumHeight(40)
-        layout.addWidget(self.title, 1)
-
-        meta = QHBoxLayout()
-        meta.setSpacing(6)
-        source = QLabel(item.get("source") or "")
-        source.setObjectName("newsSource")
-        meta.addWidget(source)
-        rel = news._relative_time(item.get("date"))
-        if rel:
-            time_label = QLabel(rel)
-            time_label.setObjectName("newsTime")
-            meta.addWidget(time_label)
-        layout.addLayout(meta)
-
-    def set_seen(self, seen):
-        self.setProperty("seen", "true" if seen else "false")
-        self.style().unpolish(self)
-        self.style().polish(self)
-        self.update()
-
-    def mouseReleaseEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
-            self.clicked.emit(self._url)
-        super().mouseReleaseEvent(event)
-
-
-class TaskWeekChart(QWidget):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setFixedHeight(120)
-        self.setMinimumWidth(220)
-        self._days = []
-
-    def set_data(self, days):
-        self._days = days
-        self.update()
-
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        if not self._days:
-            painter.setPen(QColor(theme.MUTED))
-            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "Sem dados")
-            return
-        today = datetime.date.today()
-        if sum(count for _, count in self._days) == 0:
-            painter.setPen(QColor(theme.MUTED))
-            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "Sem conclusões ainda")
-            return
-        max_count = max((count for _, count in self._days), default=0) or 1
-        n = len(self._days)
-        slot = self.width() / n
-        bar_w = min(34.0, slot * 0.55)
-        baseline = self.height() - 22
-        label_font = painter.font()
-        label_font.setPointSizeF(max(7, 8 * theme.FONT_SCALE))
-        painter.setPen(QColor(theme.BORDER))
-        painter.drawLine(4, baseline, self.width() - 4, baseline)
-        for i, (date, count) in enumerate(self._days):
-            cx = slot * i + slot / 2
-            if count:
-                bh = max(3, int((count / max_count) * (baseline - 18)))
-                painter.setPen(Qt.PenStyle.NoPen)
-                painter.setBrush(QColor(theme.ACCENT_HOVER if date == today else theme.ACCENT))
-                painter.drawRoundedRect(QRectF(cx - bar_w / 2, baseline - bh, bar_w, bh), 3, 3)
-                painter.setPen(QColor(theme.TEXT))
-                painter.setFont(label_font)
-                painter.drawText(
-                    QRectF(cx - slot / 2, baseline - bh - 16, slot, 14),
-                    Qt.AlignmentFlag.AlignHCenter, str(count))
-            painter.setPen(QColor(theme.ACCENT if date == today else theme.MUTED))
-            painter.setFont(label_font)
-            painter.drawText(
-                QRectF(cx - slot / 2, baseline + 2, slot, 14),
-                Qt.AlignmentFlag.AlignHCenter, str(date.day))
 
 
 class DashboardView(QWidget):

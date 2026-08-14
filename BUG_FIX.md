@@ -1,5 +1,10 @@
 ---
 
+## 2026-08-12 — Preview de notas: AttributeError ao chamar preview_html fora de um QApplication
+
+- **Causa**: `notes.py` (`preview_html`) interpolava `theme.BTN`/`theme.BORDER`/`theme.MUTED` diretamente no f-string do `<style>`. Essas variáveis de módulo só existem depois que `theme.apply_theme` é chamado (injeção via `globals().update`), então `preview_html` crashava com `AttributeError: module 'theme' has no attribute 'BTN'` quando invocado sem UI (ex.: em teste/CLI). Deixado de fora do refactor anterior do `theme.py`.
+- **Solução**: `notes.py:298` — `preview_html` passa a ler as cores via `getattr(theme, nome, None)` com fallback fixo (`TEXT`/`ACCENT`/`BTN`/`BORDER`/`MUTED`), não quebrando mais fora de um QApplication e mantendo o HTML idêntico quando o app está rodando. Coberto em `tests/test_notes.py::test_preview_html_contains_style`.
+
 ## 2026-08-11 — Busca de compras: Kabum retornava zero resultados (get_all_text ignora <script>)
 
 - **Causa**: `scraper_compras.py` (`_search_kabum`, novo) lia o bloco `__NEXT_DATA__` da Kabum com `node.get_all_text()` — mas o `get_all_text` do Scrapling **ignora por padrão elementos `script`/`style`**, inclusive o próprio `<script id="__NEXT_DATA__">`, devolvendo texto vazio → `json.loads("")` falhava e a loja aparecia sem resultados.

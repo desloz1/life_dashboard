@@ -63,5 +63,20 @@
         "preco": 49.0
       }
     ]
+  },
+  {
+    "id": "9d62423aeaf6410a9a8242084a8f9fda",
+    "nome": "Monitor 27",
+    "url": "https://www.kabum.com.br/produto/1",
+    "loja": "Kabum",
+    "preco_atual": 1150.0,
+    "preco_alvo": 1200.0,
+    "drop_notified": "",
+    "historico": [
+      {
+        "data": "2026-08-12T18:09:32",
+        "preco": 1150.0
+      }
+    ]
   }
 ]

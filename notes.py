@@ -298,19 +298,26 @@ def markdown_to_html(text):
 def preview_html(content):
     """HTML completo para o preview legível, com cores do tema."""
     import theme
+    def color(name, default):
+        return getattr(theme, name, None) or default
+    c_text = color("TEXT", "#1f2937")
+    c_accent = color("ACCENT", "#3b82f6")
+    c_btn = color("BTN", "#f3f4f6")
+    c_border = color("BORDER", "#e5e7eb")
+    c_muted = color("MUTED", "#6b7280")
     style = f"""
-        body {{ color: {theme.TEXT}; font-family: 'Segoe UI'; font-size: 14px; line-height: 1.55; }}
-        h1, h2, h3, h4 {{ color: {theme.TEXT}; margin: 14px 0 6px; }}
+        body {{ color: {c_text}; font-family: 'Segoe UI'; font-size: 14px; line-height: 1.55; }}
+        h1, h2, h3, h4 {{ color: {c_text}; margin: 14px 0 6px; }}
         h1 {{ font-size: 22px; }} h2 {{ font-size: 19px; }} h3 {{ font-size: 16px; }}
         p {{ margin: 8px 0; }}
-        a {{ color: {theme.ACCENT}; }}
-        code {{ background: {theme.BTN}; border: 1px solid {theme.BORDER}; border-radius: 4px; padding: 1px 5px; font-family: 'Consolas'; }}
-        pre {{ background: {theme.BTN}; border: 1px solid {theme.BORDER}; border-radius: 8px; padding: 10px; overflow-x: auto; }}
+        a {{ color: {c_accent}; }}
+        code {{ background: {c_btn}; border: 1px solid {c_border}; border-radius: 4px; padding: 1px 5px; font-family: 'Consolas'; }}
+        pre {{ background: {c_btn}; border: 1px solid {c_border}; border-radius: 8px; padding: 10px; overflow-x: auto; }}
         pre code {{ background: transparent; border: none; padding: 0; }}
-        blockquote {{ border-left: 3px solid {theme.ACCENT}; margin: 8px 0; padding: 4px 12px; color: {theme.MUTED}; }}
-        hr {{ border: none; border-top: 1px solid {theme.BORDER}; margin: 12px 0; }}
+        blockquote {{ border-left: 3px solid {c_accent}; margin: 8px 0; padding: 4px 12px; color: {c_muted}; }}
+        hr {{ border: none; border-top: 1px solid {c_border}; margin: 12px 0; }}
         ul, ol {{ margin: 6px 0 6px 4px; padding-left: 22px; }}
         li {{ margin: 3px 0; }}
-        .task {{ color: {theme.ACCENT}; }}
+        .task {{ color: {c_accent}; }}
     """
     return f'<html><head><style>{style}</style></head><body>{markdown_to_html(content)}</body></html>'

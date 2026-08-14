@@ -42,7 +42,7 @@ import theme
 from agenda_ui import AgendaView
 from compras_ui import ComprasView, format_price
 from dashboard_ui import DashboardView
-from news import NewsView
+from news_ui import NewsView
 from notes_ui import NotesView
 from reminders_ui import RemindersView
 from tasks_ui import TasksView
