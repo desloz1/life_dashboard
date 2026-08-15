@@ -10,8 +10,8 @@ acessíveis daqui (compatível com `from compras_ui import ComprasView, format_p
 """
 
 import qtawesome as qta
-from PySide6.QtCore import QSize, Qt, QUrl, Signal
-from PySide6.QtGui import QCursor, QDesktopServices
+from PySide6.QtCore import QPointF, QRectF, QSize, Qt, QUrl, Signal
+from PySide6.QtGui import QColor, QCursor, QDesktopServices, QPainter, QPen, QPolygonF
 from PySide6.QtWidgets import (
     QDialog,
     QFrame,
@@ -34,6 +34,82 @@ from compras_util import format_datetime, format_price
 from compras_workers import LookupWorker, PriceWorker
 
 
+class PriceChart(QWidget):
+    """Mini-gráfico com a evolução do preço do produto (últimas coletas)."""
+
+    def __init__(self, product, parent=None):
+        super().__init__(parent)
+        self.product = product
+        self.setObjectName("prodChart")
+        self.setFixedHeight(92)
+        self.setMinimumWidth(220)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        history = [
+            {"data": h.get("data", ""), "preco": float(h["preco"])}
+            for h in self.product.historico
+            if h.get("preco") is not None
+        ]
+        if not history:
+            painter.setPen(QColor(theme.MUTED))
+            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "Sem histórico de preços")
+            return
+        if len(history) == 1:
+            painter.setPen(QColor(theme.MUTED))
+            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter,
+                             "Preço atual: " + format_price(history[0]["preco"]))
+            return
+
+        history = history[-20:]
+        prices = [h["preco"] for h in history]
+        lo, hi = min(prices), max(prices)
+        span = (hi - lo) or 1.0
+        margin = 8
+        margin_top, margin_bottom = 16, 18
+        chart_w = self.width() - margin * 2
+        chart_h = self.height() - margin_top - margin_bottom
+        baseline = self.height() - margin_bottom
+
+        def y_for(value):
+            return margin_top + (hi - value) / span * chart_h
+
+        step = chart_w / (len(prices) - 1)
+        points = [QPointF(margin + i * step, y_for(p)) for i, p in enumerate(prices)]
+
+        font = painter.font()
+        font.setPointSizeF(max(7, 8 * theme.FONT_SCALE))
+        painter.setFont(font)
+
+        painter.setPen(QColor(theme.BORDER))
+        painter.drawLine(margin, baseline, self.width() - margin, baseline)
+
+        painter.setPen(QColor(theme.MUTED))
+        painter.drawText(QRectF(margin, margin_top - 14, 100, 12),
+                         Qt.AlignmentFlag.AlignLeft, "mín " + format_price(lo))
+        painter.drawText(QRectF(self.width() - margin - 100, margin_top - 14, 100, 12),
+                         Qt.AlignmentFlag.AlignRight, "máx " + format_price(hi))
+        first_date = format_datetime(history[0]["data"])[:5]
+        last_date = format_datetime(history[-1]["data"])[:5]
+        painter.drawText(QRectF(margin, baseline + 2, 100, 12),
+                         Qt.AlignmentFlag.AlignLeft, "→ " + first_date)
+        painter.drawText(QRectF(self.width() - margin - 100, baseline + 2, 100, 12),
+                         Qt.AlignmentFlag.AlignRight, last_date)
+
+        painter.setPen(QPen(QColor(theme.ACCENT), 2))
+        painter.drawPolyline(QPolygonF(points))
+        painter.setBrush(QColor(theme.ACCENT))
+        painter.setPen(Qt.PenStyle.NoPen)
+        for pt in points:
+            painter.drawEllipse(pt, 2.5, 2.5)
+
+        painter.setPen(QColor(theme.TEXT))
+        painter.drawText(QRectF(points[-1].x() - 55, max(0.0, points[-1].y() - 18), 115, 14),
+                         Qt.AlignmentFlag.AlignHCenter, format_price(prices[-1]))
+        painter.end()
+
+
 class ProductCard(QFrame):
     open_requested = Signal(str)
     delete_requested = Signal(str)
@@ -51,7 +127,13 @@ class ProductCard(QFrame):
         common.make_shadow(self, y=3, blur=16)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
-        layout = QHBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        row = QWidget()
+        row.setObjectName("prodCardRow")
+        layout = QHBoxLayout(row)
         layout.setContentsMargins(10, 8, 12, 8)
         layout.setSpacing(10)
 
@@ -134,12 +216,31 @@ class ProductCard(QFrame):
         delete_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         delete_btn.setToolTip("Remover")
         delete_btn.clicked.connect(lambda: self.delete_requested.emit(product.id))
+        chart_btn = QToolButton()
+        chart_btn.setObjectName("cardBtn")
+        chart_btn.setIcon(qta.icon("fa5s.chart-line", color=theme.ACCENT))
+        chart_btn.setIconSize(QSize(14, 14))
+        chart_btn.setFixedSize(24, 24)
+        chart_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        chart_btn.setToolTip("Evolução do preço")
+        chart_btn.clicked.connect(self._toggle_chart)
         action_layout.addWidget(open_btn)
         action_layout.addWidget(target_btn)
         action_layout.addWidget(delete_btn)
+        action_layout.addWidget(chart_btn)
         actions.setVisible(False)
         layout.addWidget(actions)
         self.actions_widget = actions
+
+        outer.addWidget(row)
+        self.chart = PriceChart(product)
+        self.chart.setVisible(False)
+        outer.addWidget(self.chart)
+
+    def _toggle_chart(self):
+        if not hasattr(self, "chart"):
+            return
+        self.chart.setVisible(self.chart.isHidden())
 
     def _history_tooltip(self):
         if not self.product.historico:

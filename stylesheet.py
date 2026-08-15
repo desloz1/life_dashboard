@@ -260,6 +260,33 @@ def build_stylesheet(palette, font_scale=1.0):
             font-size: 15px;
             font-weight: 700;
         }}
+        #dashToday {{
+            background: {P['CARD']};
+            border: 1px solid {P['BORDER']};
+            border-radius: 14px;
+        }}
+        #dashTodayTitle {{
+            font-size: 15px;
+            font-weight: 700;
+            color: {P['TEXT']};
+        }}
+        #dashTodayIcon {{
+            min-width: 26px;
+        }}
+        #dashTodayTemp {{
+            font-size: 22px;
+            font-weight: 800;
+            color: {P['TEXT']};
+        }}
+        #dashTodaySub {{
+            font-size: 12px;
+            color: {P['MUTED']};
+        }}
+        #dashTodayItem {{
+            font-size: 13px;
+            font-weight: 600;
+            color: {P['TEXT']};
+        }}
         #dashAction {{
             background: {P['SECONDARY_BTN']};
             color: {P['TEXT']};
@@ -502,6 +529,12 @@ def build_stylesheet(palette, font_scale=1.0):
             color: {P['MUTED']};
             font-weight: 600;
             font-size: 15px;
+        }}
+        #prodChart {{
+            background: {P['INPUT']};
+            border-top: 1px solid {P['BORDER']};
+            border-radius: 0 0 12px 12px;
+            margin: 0 2px 2px 2px;
         }}
         #webSearchRow {{
             background: {P['CARD']};

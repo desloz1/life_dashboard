@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
     QDialog,
+    QFileDialog,
     QFrame,
     QGraphicsOpacityEffect,
     QHBoxLayout,
@@ -29,6 +30,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+import backup
 import compras as compras_mod
 import log
 import notify
@@ -70,6 +72,22 @@ class DailyTitlesWorker(QThread):
         except Exception as exc:
             self.error = exc
             logger.warning("Falha ao gerar noticias_mes_dia_ano.txt: %s", exc)
+
+
+class BackupWorker(QThread):
+    """Copia os arquivos de dados para backups/ (rotação de 7 dias)."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.result_path = None
+        self.error = None
+
+    def run(self):
+        try:
+            self.result_path = backup.run_backup(keep=7)
+        except Exception as exc:
+            self.error = exc
+            logger.warning("Falha ao executar backup: %s", exc)
 
 
 class Sidebar(QWidget):
@@ -245,6 +263,7 @@ class MainWindow(QMainWindow):
         self.dashboard_view.open_weather.connect(lambda: self.sidebar.setCurrentRow(3))
         self.dashboard_view.open_tasks.connect(lambda: self.sidebar.setCurrentRow(4))
         self.dashboard_view.open_agenda.connect(lambda: self.sidebar.setCurrentRow(5))
+        self.dashboard_view.open_webcams.connect(lambda: self.sidebar.setCurrentRow(8))
         self.dashboard_view.new_task_requested.connect(self._new_task)
         self.dashboard_view.new_reminder_requested.connect(self._new_reminder)
 
@@ -253,10 +272,33 @@ class MainWindow(QMainWindow):
 
         self._email_worker = None
         self._notif_popups = []
+        self._backup_worker = None
+        self._last_backup_day = None
         self._setup_tray()
         self._setup_scheduler()
         self._setup_shortcuts()
         self._start_daily_titles()
+        self._start_backup()
+
+    def _start_backup(self):
+        self._maybe_backup()
+
+    def _maybe_backup(self):
+        today = datetime.date.today()
+        if self._last_backup_day == today:
+            return
+        if self._backup_worker is not None and self._backup_worker.isRunning():
+            return
+        self._last_backup_day = today
+        self._backup_worker = BackupWorker(self)
+        self._backup_worker.finished.connect(self._on_backup_done)
+        self._backup_worker.start()
+
+    def _on_backup_done(self):
+        if self._backup_worker and self._backup_worker.error:
+            logger.warning("Backup automático falhou: %s", self._backup_worker.error)
+        elif self._backup_worker and self._backup_worker.result_path:
+            logger.info("Backup automático concluído em %s", self._backup_worker.result_path)
 
     def _start_daily_titles(self):
         self._titles_worker = DailyTitlesWorker(self)
@@ -416,6 +458,11 @@ class MainWindow(QMainWindow):
             prices_action = menu.addAction(qta.icon("fa5s.shopping-cart", color=theme.ACCENT), "Atualizar preços")
             prices_action.triggered.connect(self.compras_view._refresh_prices)
             menu.addSeparator()
+            export_action = menu.addAction(qta.icon("fa5s.file-export", color=theme.ACCENT), "Exportar dados…")
+            export_action.triggered.connect(self._export_all)
+            import_action = menu.addAction(qta.icon("fa5s.file-import", color=theme.ACCENT), "Importar dados…")
+            import_action.triggered.connect(self._import_all)
+            menu.addSeparator()
             task_action = menu.addAction(qta.icon("fa5s.plus", color=theme.ACCENT), "Nova tarefa")
             task_action.triggered.connect(self._new_task)
             reminder_action = menu.addAction(qta.icon("fa5s.bell", color=theme.ACCENT), "Novo lembrete")
@@ -464,6 +511,11 @@ class MainWindow(QMainWindow):
         self._prices_timer.setInterval(30 * 60 * 1000)
         self._prices_timer.timeout.connect(self._prices_tick)
         self._prices_timer.start()
+        self._backup_timer = QTimer(self)
+        self._backup_timer.setInterval(24 * 60 * 60 * 1000)
+        self._backup_timer.setSingleShot(False)
+        self._backup_timer.timeout.connect(self._maybe_backup)
+        self._backup_timer.start()
 
     def _show_notifications(self, fired):
         for reminder in fired:
@@ -556,6 +608,7 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         self._alarm_timer.stop()
         self._prices_timer.stop()
+        self._backup_timer.stop()
         self.dashboard_view.shutdown()
         self.news_view.shutdown()
         self.weather_view.shutdown()
@@ -605,6 +658,46 @@ class MainWindow(QMainWindow):
         if self.stack.graphicsEffect() is effect:
             self.stack.setGraphicsEffect(None)
         self._fade_anim = None
+
+    def _export_all(self):
+        default = f"organizador_export_{datetime.date.today().isoformat()}.json"
+        path, _ = QFileDialog.getSaveFileName(self, "Exportar dados", default, "JSON (*.json)")
+        if not path:
+            return
+        try:
+            result = backup.export_all(path)
+        except Exception as exc:
+            QMessageBox.warning(self, "Falha ao exportar", f"Erro ao exportar os dados:\n{exc}")
+            return
+        QMessageBox.information(self, "Exportar dados", f"Dados exportados em:\n{result}")
+
+    def _import_all(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Importar dados", "", "JSON (*.json)")
+        if not path:
+            return
+        answer = QMessageBox.question(
+            self,
+            "Importar dados",
+            "Importar vai SOBRESCREVER os dados atuais.\n"
+            "Um backup dos dados atuais é criado primeiro.\n\nContinuar?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            restored = backup.import_all(path)
+        except Exception as exc:
+            QMessageBox.warning(self, "Falha ao importar", f"Erro ao importar os dados:\n{exc}")
+            return
+        self.reminder_manager.load()
+        self.tasks_manager.load()
+        self.notes_manager.load()
+        self.price_tracker.load()
+        self._refresh_lists()
+        QMessageBox.information(
+            self, "Importar dados",
+            f"{len(restored)} arquivo(s) restaurado(s). Os dados foram recarregados."
+        )
 
     def _open_preferences(self):
         dialog = preferences.PreferencesDialog(self)

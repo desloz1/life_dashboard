@@ -5,7 +5,14 @@ import datetime
 import qtawesome as qta
 from PySide6.QtCore import QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QPainter
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 import common
 import news
@@ -154,3 +161,108 @@ class TaskWeekChart(QWidget):
             painter.drawText(
                 QRectF(cx - slot / 2, baseline + 2, slot, 14),
                 Qt.AlignmentFlag.AlignHCenter, str(date.day))
+
+
+class DashTodayBox(QFrame):
+    """Bloco "Dia de hoje": clima atual, tarefas/lembretes do dia, feriado e webcams."""
+
+    cameras_clicked = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("dashToday")
+        common.make_shadow(self, y=3, blur=16)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(14, 10, 14, 12)
+        root.setSpacing(8)
+
+        header = QHBoxLayout()
+        header.setSpacing(8)
+        icon = QLabel()
+        icon.setPixmap(qta.icon("fa5s.calendar-day", color=theme.ACCENT).pixmap(18, 18))
+        header.addWidget(icon)
+        title = QLabel("Dia de hoje")
+        title.setObjectName("dashTodayTitle")
+        header.addWidget(title)
+        header.addStretch()
+        self.cam_btn = QPushButton(" Ver câmeras")
+        self.cam_btn.setObjectName("secondaryBtn")
+        self.cam_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.cam_btn.clicked.connect(self.cameras_clicked.emit)
+        header.addWidget(self.cam_btn)
+        root.addLayout(header)
+
+        row = QHBoxLayout()
+        row.setSpacing(24)
+
+        weather_col = QVBoxLayout()
+        weather_col.setSpacing(2)
+        weather_top = QHBoxLayout()
+        weather_top.setSpacing(8)
+        self.weather_icon = QLabel()
+        self.weather_icon.setObjectName("dashTodayIcon")
+        weather_top.addWidget(self.weather_icon)
+        self.weather_temp = QLabel("—")
+        self.weather_temp.setObjectName("dashTodayTemp")
+        weather_top.addWidget(self.weather_temp)
+        weather_top.addStretch()
+        weather_col.addLayout(weather_top)
+        self.weather_desc = QLabel("")
+        self.weather_desc.setObjectName("dashTodaySub")
+        weather_col.addWidget(self.weather_desc)
+        self.weather_range = QLabel("")
+        self.weather_range.setObjectName("dashTodaySub")
+        weather_col.addWidget(self.weather_range)
+        row.addLayout(weather_col, 1)
+
+        items_col = QVBoxLayout()
+        items_col.setSpacing(3)
+        self.tasks_label = QLabel("")
+        self.tasks_label.setObjectName("dashTodayItem")
+        items_col.addWidget(self.tasks_label)
+        self.reminders_label = QLabel("")
+        self.reminders_label.setObjectName("dashTodayItem")
+        items_col.addWidget(self.reminders_label)
+        self.holiday_label = QLabel("")
+        self.holiday_label.setObjectName("dashTodayItem")
+        items_col.addWidget(self.holiday_label)
+        self.cameras_label = QLabel("")
+        self.cameras_label.setObjectName("dashTodayItem")
+        items_col.addWidget(self.cameras_label)
+        items_col.addStretch()
+        row.addLayout(items_col, 2)
+
+        root.addLayout(row)
+
+    def set_weather(self, icon_name, color, temp, desc, max_temp, min_temp):
+        self.weather_icon.setPixmap(qta.icon(icon_name, color=color).pixmap(26, 26))
+        self.weather_temp.setText(f"{temp}°C")
+        self.weather_desc.setText(desc)
+        self.weather_range.setText(f"máx {max_temp}° · mín {min_temp}°")
+
+    def set_weather_loading(self):
+        self.weather_icon.clear()
+        self.weather_temp.setText("—")
+        self.weather_desc.setText("Clima: carregando…")
+        self.weather_range.setText("")
+
+    def set_items(self, n_tasks, n_reminders, holiday=None, n_cameras=0):
+        self.tasks_label.setText(
+            f"{n_tasks} tarefa{'s' if n_tasks != 1 else ''} para hoje"
+            if n_tasks else "Nenhuma tarefa para hoje"
+        )
+        self.reminders_label.setText(
+            f"{n_reminders} lembrete{'s' if n_reminders != 1 else ''} hoje"
+            if n_reminders else "Sem lembretes para hoje"
+        )
+        if holiday:
+            self.holiday_label.setText(f"★ Feriado: {holiday}")
+            self.holiday_label.setVisible(True)
+        else:
+            self.holiday_label.clear()
+            self.holiday_label.setVisible(False)
+        self.cameras_label.setText(
+            f"Câmeras de Blumenau: {n_cameras}"
+            if n_cameras else "Webcams indisponíveis"
+        )

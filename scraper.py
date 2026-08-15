@@ -1,4 +1,8 @@
+import copy
+import json
 import re
+import time
+from pathlib import Path
 
 import requests
 from lxml import html
@@ -21,6 +25,72 @@ HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36"
 }
+
+# Cache de feed (evita re-buscar a rede a cada F5/abertura) e retry com backoff.
+_CACHE_DIR = Path(__file__).resolve().parent / "cache"
+_FEED_CACHE_FILE = _CACHE_DIR / "feed_cache.json"
+DEFAULT_CACHE_TTL = 300  # segundos
+HTTP_RETRIES = 2  # tentativas extras após a primeira
+HTTP_BACKOFF = 1.5  # segundos (base de crescimento exponencial)
+_HTTP_RETRY_STATUS = {429, 500, 502, 503, 504}
+
+_memory_cache = {}
+_cache_loaded = False
+
+
+def _load_disk_cache():
+    global _memory_cache, _cache_loaded
+    if _cache_loaded:
+        return
+    _cache_loaded = True
+    try:
+        _memory_cache = json.loads(_FEED_CACHE_FILE.read_text(encoding="utf-8")) or {}
+    except Exception:
+        _memory_cache = {}
+
+
+def _cache_get(key, max_age):
+    _load_disk_cache()
+    entry = _memory_cache.get(key)
+    if not entry or not isinstance(entry, dict):
+        return None
+    if time.time() - float(entry.get("ts", 0)) > max_age:
+        return None
+    items = entry.get("items")
+    if not isinstance(items, list):
+        return None
+    return copy.deepcopy([i for i in items if isinstance(i, dict)])
+
+
+def _cache_set(key, items):
+    _load_disk_cache()
+    _memory_cache[key] = {"ts": time.time(), "items": items}
+    try:
+        _CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        _FEED_CACHE_FILE.write_text(json.dumps(_memory_cache, ensure_ascii=False), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _http_get(url, retries=None, **kwargs):
+    """`requests.get` com retry/backoff para falhas transitórias de rede."""
+    attempts = (HTTP_RETRIES if retries is None else retries) + 1
+    timeout = kwargs.pop("timeout", 15)
+    last_exc = None
+    for attempt in range(attempts):
+        try:
+            response = requests.get(url, headers=HEADERS, timeout=timeout, **kwargs)
+            if response.status_code not in _HTTP_RETRY_STATUS or attempt >= attempts - 1:
+                return response
+        except requests.RequestException as exc:
+            last_exc = exc
+            if attempt >= attempts - 1:
+                raise
+        if attempt < attempts - 1:
+            time.sleep(HTTP_BACKOFF * (2 ** attempt))
+    if last_exc is not None:
+        raise last_exc
+    return requests.get(url, headers=HEADERS, timeout=timeout, **kwargs)
 
 NSC_NEWS_SECTIONS = ("bwgr-nsc-n2", "bwgr-n3", "bwgr-n6", "bwgr-n10")
 
@@ -88,7 +158,7 @@ def _image_from_article(article):
 
 
 def _fetch_nsc(limit):
-    response = requests.get(NSC_URL, headers=HEADERS, timeout=15)
+    response = _http_get(NSC_URL)
     response.raise_for_status()
     tree = html.fromstring(response.content)
 
@@ -158,7 +228,7 @@ def _informe_date(article):
 
 
 def _fetch_informe(limit):
-    response = requests.get(INFORME_URL, headers=HEADERS, timeout=15)
+    response = _http_get(INFORME_URL)
     response.raise_for_status()
     tree = html.fromstring(response.content)
 
@@ -196,7 +266,7 @@ def _aj_image(link):
 
 
 def _fetch_ajnoticias(limit):
-    response = requests.get(AJNOTICIAS_URL, headers=HEADERS, timeout=15, verify=False)
+    response = _http_get(AJNOTICIAS_URL, verify=False)
     response.raise_for_status()
     response.encoding = "utf-8"
     tree = html.fromstring(response.text)
@@ -261,7 +331,7 @@ def _iso_date(iso):
 
 
 def _fetch_oblumenauense(limit):
-    response = requests.get(OBLUMENAUENSE_URL, headers=HEADERS, timeout=15, verify=False)
+    response = _http_get(OBLUMENAUENSE_URL, verify=False)
     response.raise_for_status()
     response.encoding = "utf-8"
     tree = html.fromstring(response.text)
@@ -335,7 +405,7 @@ def _ndmais_image(article):
 
 
 def _fetch_ndmais(limit):
-    response = requests.get(NDMAIS_URL, headers=HEADERS, timeout=15)
+    response = _http_get(NDMAIS_URL)
     response.raise_for_status()
     response.encoding = "utf-8"
     tree = html.fromstring(response.text)
@@ -395,7 +465,7 @@ def _tecnoblog_date(article):
 
 
 def _fetch_tecnoblog(limit):
-    response = requests.get(TECNOBLOG_URL, headers=HEADERS, timeout=15)
+    response = _http_get(TECNOBLOG_URL)
     response.raise_for_status()
     tree = html.fromstring(response.content)
 
@@ -448,16 +518,28 @@ TECH_SOURCES = {
 }
 
 
-def fetch_tech_news(limit=10):
-    """Coleta as notícias de tecnologia mais recentes (TecnoBlog)."""
-    return _fetch_tecnoblog(limit)
+def fetch_tech_news(limit=10, max_age=DEFAULT_CACHE_TTL):
+    """Coleta as notícias de tecnologia mais recentes (TecnoBlog), com cache TTL."""
+    key = f"tech:{int(limit)}"
+    cached = _cache_get(key, max_age)
+    if cached is not None:
+        return cached
+    items = _fetch_tecnoblog(limit)
+    _cache_set(key, items)
+    return items
 
 
-def fetch_news(source="NSC Total", limit=10):
+def fetch_news(source="NSC Total", limit=10, max_age=DEFAULT_CACHE_TTL):
     entry = SOURCES.get(source)
     if entry is None:
         raise ValueError(f"Fonte desconhecida: {source}")
-    return entry["fetch"](limit)
+    key = f"news:{source}:{int(limit)}"
+    cached = _cache_get(key, max_age)
+    if cached is not None:
+        return cached
+    items = entry["fetch"](limit)
+    _cache_set(key, items)
+    return items
 
 
 def fetch_titles(limit=50):

@@ -5,6 +5,19 @@ adicionadas ao topo desta lista, com data, em cada sessão de trabalho.
 
 ---
 
+## 2026-08-15 — Segurança de dados, backup/export, cache + retry, gráfico de preços e "Dia de hoje"
+
+- **Versionamento**: novo `.gitignore` (dados pessoais `tarefas.txt`/`notas.json`/`compras.json`/`lembretes.txt`/`estado_noticias.json`, `app.log`, `cache/`, `anexos/`, `backups/`, `client_secret.json`, `__pycache__/`, `*.pyc`) e `git rm --cached` desses arquivos — dados pessoais não são mais rastreados (ficam só no disco).
+- **Backup automático** (`backup.py`, novo, puro): `run_backup(keep=7)` copia os arquivos de dados para `backups/backup_<ts>/` com rotação (mantém os 7 mais recentes); `export_all(path)`/`import_all(path)` gravam/restauram todos os dados num único JSON (round-trip byte-exato, com backup pré-import). Em `main.py`: `BackupWorker` (QThread) roda na inicialização e `_backup_timer` a cada 24 h (uma vez por dia); novas ações de bandeja "Exportar dados…" / "Importar dados…" via `QFileDialog` (import sobrescreve com confirmação, cria backup primeiro e recarrega os 4 managers).
+- **Cache de feed com TTL** (`scraper.py`): `fetch_news`/`fetch_tech_news` passam a ler/gravar `cache/feed_cache.json` (TTL padrão 300 s) — F5/abertura de aba usam a última coleta dentro da janela; `_cache_get` devolve cópia profunda (workers podem anotar itens sem corromper o cache).
+- **Retry/backoff** (`scraper.py`): novo `_http_get` (2 tentativas extras, backoff 1,5 s×2^n, retry em 429/5xx) substitui os `requests.get` das 6 fontes de notícias.
+- **Compras** (`compras_ui.py`): novo widget `PriceChart` (`#prodChart`) com a evolução do preço (linha + pontos, mín/máx, datas primeira/última coleta, último preço) pintado com QPainter nas cores do tema; botão lápis-de-gráfico (`fa5s.chart-line`) no hover do `ProductCard` expande/recolhe o gráfico (cards sem histórico mostram mensagem).
+- **Início** (`dashboard_ui.py` + `dashboard_widgets.py`): novo bloco "Dia de hoje" (`#dashToday`) acima dos cards de resumo — clima atual (temp/desc/máx/mín), contagem de tarefas para hoje, lembretes de hoje, feriados nacionais (`holidays.holidays_for`) e nº de câmeras de Blumenau, com botão "Ver câmeras" que navega para a aba Webcams (`open_webcams` → sidebar row 8); atualizado no `refresh()` e ao carregar/falhar o clima.
+- **Testes de UI** (`tests/test_ui.py`, novo): pytest-qt offscreen — QSS dos dois temas contém os novos estilos, `ProductCard` (texto/preço/tooltip de histórico/toggle do gráfico), `TaskWeekChart` (paint com dados e vazio), `SummaryCard`, `DashTodayBox` (set_items/set_weather/ocultar feriado). Novo `requirements-dev.txt` (`pytest`, `pytest-qt`).
+- **Validação**: `python -m pytest tests -q` → **121 passed** (112 antigos + 9 de UI); `import main` OK; `MainWindow` com as 9 abas nos temas claro/escuro (offscreen) sem exceção; round-trip de export/import e `run_backup` validados em diretório temporário.
+
+---
+
 ## 2026-08-12 — Suíte de testes automatizados (pytest) para os módulos puros
 
 - `requirements` de teste: `pip install pytest` (pytest 9.1.1; Python 3.12).

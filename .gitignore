@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.pyc
+
+# Dados pessoais do usuário (nunca versionar)
+tarefas.txt
+notas.json
+compras.json
+lembretes.txt
+estado_noticias.json
+
+# Backup / exportação
+backups/
+*.backup.json
+
+# Cache de imagens e feed
+cache/
+
+# Anexos das notas
+anexos/
+
+# Gmail / OAuth
+client_secret.json
+*.token
+
+# Logs
+app.log
+
+# Editor / SO
+.vscode/
+.idea/
+Thumbs.db

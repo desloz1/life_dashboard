@@ -24,11 +24,13 @@ from PySide6.QtWidgets import (
 )
 
 import common
+import holidays
 import news
 import reminders as rem
 import theme
+import webcams
 from dashboard_workers import DashNewsWorker, DashTechWorker
-from dashboard_widgets import DashNewsRow, SummaryCard, TaskWeekChart
+from dashboard_widgets import DashNewsRow, DashTodayBox, SummaryCard, TaskWeekChart
 from weather_ui import WeatherWorker, format_full_date
 
 
@@ -49,6 +51,7 @@ class DashboardView(QWidget):
     open_weather = Signal()
     open_tasks = Signal()
     open_agenda = Signal()
+    open_webcams = Signal()
     new_task_requested = Signal()
     new_reminder_requested = Signal()
 
@@ -85,6 +88,11 @@ class DashboardView(QWidget):
         self.refresh_btn.clicked.connect(self.load_weather)
         header.addWidget(self.refresh_btn)
         root.addLayout(header)
+
+        self.today_box = DashTodayBox()
+        self.today_box.cameras_clicked.connect(self.open_webcams.emit)
+        self.today_box.set_weather_loading()
+        root.addWidget(self.today_box)
 
         grid = QGridLayout()
         grid.setSpacing(12)
@@ -277,6 +285,27 @@ class DashboardView(QWidget):
         self._refresh_reminders()
         self._refresh_tasks()
         self._refresh_stats()
+        self._refresh_today()
+
+    def _refresh_today(self):
+        today = datetime.date.today()
+        today_iso = today.isoformat()
+        n_tasks = sum(
+            1 for t in self.tasks_manager.tasks
+            if not t.completed and t.due == today_iso
+        )
+        n_reminders = sum(
+            1 for r in self.reminder_manager.reminders
+            if r.enabled and r.next_trigger and r.next_trigger[:10] == today_iso
+        )
+        local_holidays = holidays.holidays_for(today)
+        holiday = ", ".join(local_holidays) if local_holidays else None
+        self.today_box.set_items(
+            n_tasks,
+            n_reminders,
+            holiday=holiday,
+            n_cameras=len(webcams.CAMERA_SOURCES),
+        )
 
     def _refresh_reminders(self):
         now = datetime.datetime.now()
@@ -397,11 +426,20 @@ class DashboardView(QWidget):
         self.weather_card.set_icon(data["icon"], data["color"])
         self.weather_card.value.setText(f"{data['temperature']}°C")
         self.weather_card.sub.setText(data["description"])
+        self.today_box.set_weather(
+            data["icon"],
+            data["color"],
+            data["temperature"],
+            data["description"],
+            data["max"],
+            data["min"],
+        )
         self.status_ok()
 
     def _on_weather_failed(self, error):
         self.weather_card.value.setText("—")
         self.weather_card.sub.setText("Sem conexão")
+        self.today_box.set_weather_loading()
 
     def status_ok(self):
         pass
