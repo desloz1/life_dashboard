@@ -3,7 +3,7 @@ import os
 
 import qtawesome as qta
 from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtGui import QFontMetrics, QPixmap
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
@@ -142,6 +142,7 @@ class NoteCard(QFrame):
         top.setSpacing(6)
         title = QLabel(note.title or "Sem título")
         title.setObjectName("noteTitle")
+        title.setWordWrap(True)
         top.addWidget(title, 1)
         if note.attachments:
             clip = QLabel()
@@ -165,14 +166,14 @@ class NoteCard(QFrame):
         snippet_text = (note.content or "").replace("\n", " ").strip()
         if not snippet_text:
             snippet_text = "Nota vazia"
-        metrics = QFontMetrics(QLabel().font())
-        snippet = QLabel(metrics.elidedText(snippet_text, Qt.TextElideMode.ElideRight, 360))
+        snippet = QLabel(snippet_text)
         snippet.setObjectName("noteSnippet")
+        snippet.setWordWrap(True)
         text_col.addWidget(snippet)
         text_col.addStretch()
         layout.addLayout(text_col, 1)
 
-        self.setFixedHeight(68)
+        self.setMinimumHeight(68)
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -365,6 +366,29 @@ class NotesView(QWidget):
         self.edit_strip.remove_requested.connect(self._remove_attachment)
         layout.addWidget(self.edit_strip)
 
+        fmt = QHBoxLayout()
+        fmt.setSpacing(4)
+        for icon, tip, action in (
+            ("fa5s.bold", "Negrito (**)**", lambda: self._wrap_selection("**", "**")),
+            ("fa5s.italic", "Itálico (*)", lambda: self._wrap_selection("*", "*")),
+            ("fa5s.strikethrough", "Riscado (~~)", lambda: self._wrap_selection("~~", "~~")),
+            ("fa5s.code", "Código (`)", lambda: self._wrap_selection("`", "`")),
+            ("fa5s.link", "Link ([texto](url))", lambda: self._wrap_link()),
+            ("fa5s.heading", "Título (#)", lambda: self._line_prefix("# ")),
+            ("fa5s.list-ul", "Lista (- )", lambda: self._line_prefix("- ")),
+            ("fa5s.check-square", "Tarefa (- [ ])", lambda: self._line_prefix("- [ ] ")),
+            ("fa5s.quote-left", "Citação (>)", lambda: self._line_prefix("> ")),
+        ):
+            btn = QToolButton()
+            btn.setObjectName("cardBtn")
+            btn.setIcon(qta.icon(icon, color=theme.TEXT))
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setToolTip(tip)
+            btn.clicked.connect(action)
+            fmt.addWidget(btn)
+        fmt.addStretch()
+        layout.addLayout(fmt)
+
         self.editor = QTextEdit()
         self.editor.setObjectName("noteEditor")
         self.editor.setAcceptRichText(False)
@@ -498,6 +522,42 @@ class NotesView(QWidget):
     def _cancel_edit(self):
         self._editing = False
         self._update_right()
+
+    def _wrap_selection(self, before, after):
+        cur = self.editor.textCursor()
+        text = cur.selectedText()
+        if text:
+            cur.insertText(f"{before}{text}{after}")
+        else:
+            cur.insertText(f"{before}{after}")
+            cur.setPosition(cur.position() - len(after))
+        self.editor.setTextCursor(cur)
+        self.editor.setFocus()
+
+    def _wrap_link(self):
+        cur = self.editor.textCursor()
+        text = cur.selectedText() or "texto"
+        cur.insertText(f"[{text}](url)")
+        self.editor.setTextCursor(cur)
+        self.editor.setFocus()
+
+    def _line_prefix(self, prefix):
+        cur = self.editor.textCursor()
+        cur.beginEditBlock()
+        sel_start = cur.selectionStart()
+        sel_end = cur.selectionEnd()
+        cur.setPosition(sel_start)
+        block_start = cur.block().position()
+        pos = block_start
+        while pos <= sel_end:
+            cur.setPosition(pos)
+            cur.insertText(prefix)
+            block = cur.block().next()
+            if not block.isValid():
+                break
+            pos = block.position()
+        cur.endEditBlock()
+        self.editor.setFocus()
 
     def _save_current_edits(self):
         if self._editing and self._current_note() is not None:

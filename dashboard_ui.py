@@ -66,7 +66,7 @@ class DashboardView(QWidget):
         self._tech_items = []
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
+        root.setContentsMargins(16, 0, 16, 0)
         root.setSpacing(16)
 
         header = QHBoxLayout()
@@ -105,6 +105,9 @@ class DashboardView(QWidget):
         grid.addWidget(self.reminder_card, 0, 0)
         grid.addWidget(self.task_card, 0, 1)
         grid.addWidget(self.weather_card, 0, 2)
+        grid.setColumnStretch(0, 1)
+        grid.setColumnStretch(1, 1)
+        grid.setColumnStretch(2, 1)
         root.addLayout(grid)
 
         actions = QHBoxLayout()

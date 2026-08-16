@@ -1,5 +1,26 @@
 ---
 
+## 2026-08-16 — Clima: sombra do primeiro card (relógio) cortada nas bordas
+
+- **Causa**: `weather_ui.py` (`WeatherView.__init__`) usava `root.setContentsMargins(0, 0, 0, 0)`. O `clock_card` (primeira bolha) estica até a largura total da view e ficava colado nas bordas (esquerda `x=0` e direita `w-1`), recortando a sombra (`blur 16`) — mesmo defeito do Início. Verificado por análise de pixels (card tocava as duas bordas).
+- **Solução**: `weather_ui.py:174` — `root.setContentsMargins(16, 0, 16, 0)`. Verificado: gaps de ~14–19 px em ambos os lados; `import weather_ui` OK.
+
+---
+
+## 2026-08-16 — Início: sombra dos cards cortada nas bordas (esquerda e direita)
+
+- **Causa**: `dashboard_ui.py` (`DashboardView.__init__`) usava `root.setContentsMargins(0, 0, 0, 0)`. Como os cards do Início (DashTodayBox, SummaryCards, dashStats) esticam até a largura total da view, o primeiro card ficava em `x=0` e o último em `x=largura`; a sombra (`QGraphicsDropShadowEffect`, blur 16) renderizada além desses limites era recortada pela view. Verificado por análise de pixels: card tocava a borda esquerda (x=0) e direita (w-1) sem espaço para a sombra.
+- **Solução**: `dashboard_ui.py:69` — `root.setContentsMargins(16, 0, 16, 0)` insere os cards dos lados, dando espaço para a sombra nos dois lados (verificado: gaps de ~14–16 px em ambos). Sem mudança nos demais temas/abas. `import main` OK.
+
+---
+
+## 2026-08-16 — Card de Nota cortado dependendo do tamanho da tela
+
+- **Causa**: `notes_ui.py` (`NoteCard`) usava `self.setFixedHeight(68)` e um snippet pré-elipsado a 360 px (`metrics.elidedText(..., 360)`) e título sem `wordWrap`. Com a janela/tela menor, o conteúdo (linha do título + badges + snippet) excedia os 68 px fixos ou a largura do card (lista fixa em 260), e o Qt recortava o texto excedente.
+- **Solução**: `notes_ui.py:175` — trocado `setFixedHeight(68)` por `setMinimumHeight(68)` (o card agora cresce conforme o conteúdo); título e snippet ganharam `setWordWrap(True)` (o snippet deixou de ser pré-elipsado em largura fixa e passa a quebrar linha). O card se ajusta automaticamente em qualquer tamanho de tela. Removido o import `QFontMetrics` não usado. Validado: `import notes_ui` OK.
+
+---
+
 ## 2026-08-12 — Preview de notas: AttributeError ao chamar preview_html fora de um QApplication
 
 - **Causa**: `notes.py` (`preview_html`) interpolava `theme.BTN`/`theme.BORDER`/`theme.MUTED` diretamente no f-string do `<style>`. Essas variáveis de módulo só existem depois que `theme.apply_theme` é chamado (injeção via `globals().update`), então `preview_html` crashava com `AttributeError: module 'theme' has no attribute 'BTN'` quando invocado sem UI (ex.: em teste/CLI). Deixado de fora do refactor anterior do `theme.py`.

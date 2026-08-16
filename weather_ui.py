@@ -171,7 +171,7 @@ class WeatherView(QWidget):
         self._worker = None
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
+        root.setContentsMargins(16, 0, 16, 0)
         root.setSpacing(16)
 
         header = QHBoxLayout()

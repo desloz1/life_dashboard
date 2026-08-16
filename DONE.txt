@@ -5,6 +5,26 @@ adicionadas ao topo desta lista, com data, em cada sessão de trabalho.
 
 ---
 
+## 2026-08-16 — Clima: sombra do card de relógio não é mais cortada
+
+- `weather_ui.py` (`WeatherView.__init__`): `root.setContentsMargins(16, 0, 16, 0)` — o `clock_card` (primeira bolha) esticava até a largura total da view e ficava colado nas bordas, recortando a sombra (`blur 16`), mesmo defeito do Início. A margem lateral de 16 px dá espaço para a sombra dos dois lados. Detalhes em `BUG_FIX.md`.
+
+---
+
+## 2026-08-16 — Início: sombra dos cards não é mais cortada nas bordas
+
+- `dashboard_ui.py` (`DashboardView.__init__`): `root.setContentsMargins(16, 0, 16, 0)` — os cards do Início esticam até a largura total da view e ficavam colados nas bordas (esquerda `x=0` e direita `w-1`), recortando a sombra (`QGraphicsDropShadowEffect`, blur 16). A margem lateral de 16 px dá espaço para a sombra dos dois lados. Detalhes em `BUG_FIX.md`.
+
+---
+
+## 2026-08-16 — Botões de formatação no editor da aba Notas
+
+- `notes_ui.py` (`_build_edit_page`): barra de formatação acima do editor com `QToolButton` (`cardBtn`) para Negrito, Itálico, Riscado, Código, Link, Título, Lista, Tarefa e Citação — cada botão insere a sintaxe Markdown (por ex. `**negrito**`, `- [ ]`, `# `) ao redor da seleção no editor de texto puro.
+- `notes_ui.py`: novos helpers `_wrap_selection`, `_wrap_link` e `_line_prefix` que aplicam a formatação na seleção (ou na posição do cursor quando nada selecionado, mantendo o cursor dentro do par) e devolvem o foco ao editor.
+- `import notes_ui` OK (o erro de `scrapling` em `import main` é pré-existente e não relacionado).
+
+---
+
 ## 2026-08-15 — Segurança de dados, backup/export, cache + retry, gráfico de preços e "Dia de hoje"
 
 - **Versionamento**: novo `.gitignore` (dados pessoais `tarefas.txt`/`notas.json`/`compras.json`/`lembretes.txt`/`estado_noticias.json`, `app.log`, `cache/`, `anexos/`, `backups/`, `client_secret.json`, `__pycache__/`, `*.pyc`) e `git rm --cached` desses arquivos — dados pessoais não são mais rastreados (ficam só no disco).
